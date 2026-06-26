@@ -144,7 +144,7 @@ public class AvcAidlDashActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         if (intent.getBooleanExtra(EXTRA_FINISH, false)) {
-            finishAndRemoveTask();
+            finishFast();
             return;
         }
         setIntent(intent);
@@ -169,8 +169,17 @@ public class AvcAidlDashActivity extends Activity {
         if (activity == null) {
             return false;
         }
-        activity.runOnUiThread(activity::finishAndRemoveTask);
+        activity.runOnUiThread(activity::finishFast);
         return true;
+    }
+
+    private void finishFast() {
+        handler.removeCallbacksAndMessages(null);
+        if (presentation != null) {
+            presentation.dismiss();
+            presentation = null;
+        }
+        finishAndRemoveTask();
     }
 
     private Display findDisplay(int requestedDisplayId) {
@@ -227,6 +236,7 @@ public class AvcAidlDashActivity extends Activity {
         private boolean initAttempted;
         private Surface surface;
         private boolean ownsSurface;
+        private boolean dismissed;
 
         private final ServiceConnection serviceConnection = new ServiceConnection() {
             @Override
@@ -295,8 +305,15 @@ public class AvcAidlDashActivity extends Activity {
 
         @Override
         public void dismiss() {
-            releaseAvc();
-            super.dismiss();
+            if (dismissed) {
+                return;
+            }
+            dismissed = true;
+            try {
+                super.dismiss();
+            } finally {
+                releaseAvc();
+            }
         }
 
         @Override
