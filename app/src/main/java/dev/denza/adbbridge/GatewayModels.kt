@@ -7,6 +7,7 @@ const val SSH_PORT = 2222
 
 enum class GatewayStatus(val title: String) {
     Stopped("Stopped"),
+    Starting("Starting"),
     NoWifi("No Wi-Fi"),
     AdbUnavailable("ADB unavailable"),
     Ready("Ready"),
@@ -70,12 +71,13 @@ data class GatewayUiState(
     val wifiBinding: WifiBinding? = null,
     val activeEndpoint: AdbEndpoint? = null,
     val hostFingerprint: String = "",
+    val gatewayActive: Boolean = false,
     val isBusy: Boolean = false,
     val lastError: String? = null,
     val logs: List<LogEntry> = emptyList(),
 ) {
     val isRunning: Boolean
-        get() = status == GatewayStatus.Running || status == GatewayStatus.ClientConnected
+        get() = gatewayActive
 
     val isBlocked: Boolean
         get() = status == GatewayStatus.BlockedPeer

@@ -100,16 +100,17 @@ object GatewayRepository {
                     log(LogLevel.Warn, "Wi-Fi IPv4 address is missing; SSH gateway cannot start yet")
                 }
             }.onFailure { error ->
+                val message = error.gatewayMessage()
                 _state.update {
                     it.copy(
                         status = GatewayStatus.AdbUnavailable,
                         wifiBinding = binding,
                         activeEndpoint = null,
                         isBusy = false,
-                        lastError = error.message,
+                        lastError = message,
                     )
                 }
-                log(LogLevel.Error, "ADB test failed: ${error.message}")
+                log(LogLevel.Error, "ADB test failed: $message")
             }
         }
     }
@@ -125,6 +126,7 @@ object GatewayRepository {
                         status = GatewayStatus.NoWifi,
                         wifiBinding = null,
                         activeEndpoint = null,
+                        gatewayActive = false,
                         isBusy = false,
                         lastError = "Connect the car to Wi-Fi first",
                     )
@@ -133,21 +135,31 @@ object GatewayRepository {
                 return
             }
 
-            _state.update { it.copy(isBusy = true, wifiBinding = binding, lastError = null) }
+            _state.update {
+                it.copy(
+                    status = GatewayStatus.Starting,
+                    gatewayActive = false,
+                    isBusy = true,
+                    wifiBinding = binding,
+                    lastError = null,
+                )
+            }
             log(LogLevel.Info, "Starting gateway on ${binding.hostAddress}:${_state.value.config.sshPort}")
 
             val endpointResult = AdbProbe().detect(_state.value.config)
             val endpoint = endpointResult.getOrElse { error ->
+                val message = error.gatewayMessage()
                 _state.update {
                     it.copy(
                         status = GatewayStatus.AdbUnavailable,
                         wifiBinding = binding,
                         activeEndpoint = null,
+                        gatewayActive = false,
                         isBusy = false,
-                        lastError = error.message,
+                        lastError = message,
                     )
                 }
-                log(LogLevel.Error, "Start failed: ${error.message}")
+                log(LogLevel.Error, "Start failed: $message")
                 return
             }
 
@@ -160,13 +172,21 @@ object GatewayRepository {
                 hostKeyFile = hostKeyFile,
                 codeProvider = { _state.value.pairingCode },
                 onLog = ::log,
-                onClientConnected = {
+                onClientCountChanged = { count ->
                     _state.update { current ->
-                        if (current.isRunning) current.copy(status = GatewayStatus.ClientConnected) else current
+                        if (!current.isRunning) {
+                            current
+                        } else if (count > 0) {
+                            current.copy(status = GatewayStatus.ClientConnected)
+                        } else {
+                            current.copy(status = GatewayStatus.Running)
+                        }
                     }
                 },
                 onBlockedPeer = { reason ->
-                    _state.update { it.copy(status = GatewayStatus.BlockedPeer, lastError = reason) }
+                    _state.update {
+                        if (it.isRunning) it.copy(status = GatewayStatus.BlockedPeer, lastError = reason) else it
+                    }
                 },
             )
 
@@ -179,6 +199,7 @@ object GatewayRepository {
                         wifiBinding = binding,
                         activeEndpoint = endpoint,
                         hostFingerprint = fingerprint,
+                        gatewayActive = true,
                         isBusy = false,
                         lastError = null,
                     )
@@ -186,16 +207,18 @@ object GatewayRepository {
                 log(LogLevel.Info, "Gateway ready; SSH host fingerprint $fingerprint")
             } catch (error: Throwable) {
                 runCatching { gateway.stop() }
+                val message = error.gatewayMessage()
                 _state.update {
                     it.copy(
                         status = GatewayStatus.Error,
                         wifiBinding = binding,
                         activeEndpoint = endpoint,
+                        gatewayActive = false,
                         isBusy = false,
-                        lastError = error.message,
+                        lastError = message,
                     )
                 }
-                log(LogLevel.Error, "Gateway failed to start: ${error.message}")
+                log(LogLevel.Error, "Gateway failed to start: $message")
             }
         }
     }
@@ -203,14 +226,35 @@ object GatewayRepository {
     suspend fun stopGateway() {
         mutex.withLock {
             stopGatewayLocked()
-            _state.update { it.copy(status = GatewayStatus.Stopped, isBusy = false, lastError = null) }
+            _state.update {
+                it.copy(
+                    status = GatewayStatus.Stopped,
+                    gatewayActive = false,
+                    isBusy = false,
+                    lastError = null,
+                )
+            }
+        }
+    }
+
+    suspend fun onServiceDestroyed() {
+        mutex.withLock {
+            val wasRunning = _state.value.isRunning
+            stopGatewayLocked()
+            _state.update {
+                if (wasRunning) {
+                    it.copy(status = GatewayStatus.Stopped, gatewayActive = false, isBusy = false)
+                } else {
+                    it.copy(gatewayActive = false, isBusy = false)
+                }
+            }
         }
     }
 
     private fun stopGatewayLocked() {
         server?.let { current ->
             runCatching { current.stop() }
-                .onFailure { log(LogLevel.Warn, "Gateway stop reported: ${it.message}") }
+                .onFailure { log(LogLevel.Warn, "Gateway stop reported: ${it.gatewayMessage()}") }
         }
         server = null
     }

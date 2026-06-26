@@ -61,7 +61,7 @@ class GatewayService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        runBlocking(Dispatchers.IO) { GatewayRepository.stopGateway() }
+        runBlocking(Dispatchers.IO) { GatewayRepository.onServiceDestroyed() }
         scope.cancel()
         super.onDestroy()
     }

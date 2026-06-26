@@ -10,12 +10,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,13 +27,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -46,7 +48,6 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -64,9 +65,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -137,91 +136,233 @@ private fun GatewayScreen() {
         GatewayRepository.refreshWifi(context)
     }
 
+    val onStart: () -> Unit = { GatewayService.start(context) }
+    val onStop: () -> Unit = { GatewayService.stop(context) }
+    val onTest: () -> Unit = { scope.launch { GatewayRepository.testAdb(context) } }
+    val onRotate: () -> Unit = { GatewayRepository.rotateCode() }
+
     Scaffold(containerColor = AppBackground) { padding ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(AppBackground)
                 .padding(padding)
-                .padding(horizontal = 20.dp, vertical = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
         ) {
-            Header(state)
-            ActionStrip(
-                state = state,
-                onStart = { GatewayService.start(context) },
-                onStop = { GatewayService.stop(context) },
-                onTest = { scope.launch { GatewayRepository.testAdb(context) } },
-                onRotate = { GatewayRepository.rotateCode() },
-            )
-            ConnectionPanel(state)
-            EndpointPanel(state)
-            CommandPanel(state)
-            LogPanel(state.logs)
+            val wideLayout = maxWidth >= 840.dp
+            if (wideLayout) {
+                WideGatewayContent(
+                    state = state,
+                    onStart = onStart,
+                    onStop = onStop,
+                    onTest = onTest,
+                    onRotate = onRotate,
+                )
+            } else {
+                CompactGatewayContent(
+                    state = state,
+                    onStart = onStart,
+                    onStop = onStop,
+                    onTest = onTest,
+                    onRotate = onRotate,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun Header(state: GatewayUiState) {
+private fun CompactGatewayContent(
+    state: GatewayUiState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onTest: () -> Unit,
+    onRotate: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Header(state)
+        ActionStrip(
+            state = state,
+            onStart = onStart,
+            onStop = onStop,
+            onTest = onTest,
+            onRotate = onRotate,
+        )
+        ConnectionPanel(state)
+        EndpointPanel(state)
+        CommandPanel(state)
+        LogPanel(state.logs)
+    }
+}
+
+@Composable
+private fun WideGatewayContent(
+    state: GatewayUiState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    onTest: () -> Unit,
+    onRotate: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AppBackground),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Header(state, compact = true)
+        ActionStrip(
+            state = state,
+            onStart = onStart,
+            onStop = onStop,
+            onTest = onTest,
+            onRotate = onRotate,
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(0.34f)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                ConnectionPanel(state)
+                EndpointPanel(state)
+                CommandPanel(state)
+            }
+            Column(
+                modifier = Modifier
+                    .weight(0.66f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+            ) {
+                LogPanel(
+                    logs = state.logs,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    expanded = true,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Header(state: GatewayUiState, compact: Boolean = false) {
     Surface(
         color = Panel,
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(1.dp, PanelStroke),
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
+        if (compact) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.weight(0.9f),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Denza ADB Gateway",
+                        color = TextPrimary,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatusPill(state.status)
+                }
+                Row(
+                    modifier = Modifier.weight(1.5f),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MetricBlock(
+                        modifier = Modifier.weight(1f),
+                        icon = { Icon(Icons.Rounded.Wifi, contentDescription = null) },
+                        label = "Wi-Fi",
+                        value = state.wifiBinding?.hostAddress ?: "offline",
+                        compact = true,
+                    )
+                    MetricBlock(
+                        modifier = Modifier.weight(1f),
+                        icon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                        label = "Code",
+                        value = state.pairingCode,
+                        monospace = true,
+                        compact = true,
+                    )
+                    MetricBlock(
+                        modifier = Modifier.weight(1f),
+                        icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                        label = "SSH",
+                        value = state.config.sshPort.toString(),
+                        compact = true,
+                    )
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
                         text = "Denza ADB Gateway",
                         color = TextPrimary,
                         fontSize = 26.sp,
                         fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = state.activeEndpoint?.kind?.title ?: "ADB endpoint not selected",
-                        color = TextSecondary,
-                        fontSize = 14.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    StatusPill(state.status)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MetricBlock(
+                        modifier = Modifier.weight(1f),
+                        icon = { Icon(Icons.Rounded.Wifi, contentDescription = null) },
+                        label = "Wi-Fi",
+                        value = state.wifiBinding?.hostAddress ?: "offline",
+                    )
+                    MetricBlock(
+                        modifier = Modifier.weight(1f),
+                        icon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
+                        label = "Code",
+                        value = state.pairingCode,
+                        monospace = true,
+                    )
+                    MetricBlock(
+                        modifier = Modifier.weight(1f),
+                        icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
+                        label = "SSH",
+                        value = state.config.sshPort.toString(),
                     )
                 }
-                StatusPill(state.status)
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MetricBlock(
-                    modifier = Modifier.weight(1f),
-                    icon = { Icon(Icons.Rounded.Wifi, contentDescription = null) },
-                    label = "Wi-Fi",
-                    value = state.wifiBinding?.hostAddress ?: "offline",
-                )
-                MetricBlock(
-                    modifier = Modifier.weight(1f),
-                    icon = { Icon(Icons.Rounded.Lock, contentDescription = null) },
-                    label = "Code",
-                    value = state.pairingCode,
-                    monospace = true,
-                )
-                MetricBlock(
-                    modifier = Modifier.weight(1f),
-                    icon = { Icon(Icons.Rounded.Settings, contentDescription = null) },
-                    label = "SSH",
-                    value = state.config.sshPort.toString(),
-                )
             }
         }
     }
@@ -250,7 +391,7 @@ private fun StatusPill(status: GatewayStatus) {
                 tint = color,
                 modifier = Modifier.size(18.dp),
             )
-            Text(status.title, color = TextPrimary, fontWeight = FontWeight.Medium)
+            Text(status.title, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -262,14 +403,15 @@ private fun MetricBlock(
     label: String,
     value: String,
     monospace: Boolean = false,
+    compact: Boolean = false,
 ) {
     Surface(
-        modifier = modifier.heightIn(min = 82.dp),
+        modifier = modifier.heightIn(min = if (compact) 66.dp else 82.dp),
         color = PanelMuted,
         shape = RoundedCornerShape(8.dp),
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(if (compact) 10.dp else 12.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(
@@ -286,7 +428,12 @@ private fun MetricBlock(
                 color = TextPrimary,
                 fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = if (monospace) 22.sp else 20.sp,
+                fontSize = when {
+                    compact && monospace -> 19.sp
+                    compact -> 18.sp
+                    monospace -> 22.sp
+                    else -> 20.sp
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -303,6 +450,13 @@ private fun ActionStrip(
     onTest: () -> Unit,
     onRotate: () -> Unit,
 ) {
+    val startLabel = when {
+        state.status == GatewayStatus.Starting -> "Starting..."
+        state.isRunning -> "Running"
+        else -> "Start"
+    }
+    val testLabel = if (state.isBusy && state.status != GatewayStatus.Starting) "Testing..." else "Test ADB"
+
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -317,11 +471,11 @@ private fun ActionStrip(
         ) {
             Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Start")
+            Text(startLabel)
         }
         OutlinedButton(
             onClick = onStop,
-            enabled = !state.isBusy && state.status != GatewayStatus.Stopped,
+            enabled = !state.isBusy && state.isRunning,
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
         ) {
@@ -331,13 +485,13 @@ private fun ActionStrip(
         }
         OutlinedButton(
             onClick = onTest,
-            enabled = !state.isBusy,
+            enabled = !state.isBusy && !state.isRunning,
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
         ) {
             Icon(Icons.Rounded.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Test ADB")
+            Text(testLabel)
         }
         OutlinedButton(
             onClick = onRotate,
@@ -407,6 +561,7 @@ private fun EndpointPanel(state: GatewayUiState) {
                     FilterChip(
                         selected = state.config.endpointMode == mode,
                         onClick = { GatewayRepository.updateEndpointMode(mode) },
+                        enabled = !state.isRunning,
                         label = { Text(mode.title) },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = AccentCyan.copy(alpha = 0.20f),
@@ -424,14 +579,14 @@ private fun EndpointPanel(state: GatewayUiState) {
             }
 
             if (state.config.endpointMode != EndpointMode.Auto) {
-                EndpointFields(state.config)
+                EndpointFields(state.config, enabled = !state.isRunning)
             }
         }
     }
 }
 
 @Composable
-private fun EndpointFields(config: GatewayConfig) {
+private fun EndpointFields(config: GatewayConfig, enabled: Boolean) {
     val isSmartSocket = config.endpointMode == EndpointMode.AdbServer
     val host = if (isSmartSocket) config.adbServerHost else config.rawAdbdHost
     val port = if (isSmartSocket) config.adbServerPort else config.rawAdbdPort
@@ -448,6 +603,7 @@ private fun EndpointFields(config: GatewayConfig) {
                 hostText = it
                 if (isSmartSocket) GatewayRepository.updateAdbServerHost(it) else GatewayRepository.updateRawAdbdHost(it)
             },
+            enabled = enabled,
             label = { Text("Host") },
             singleLine = true,
             modifier = Modifier.weight(1f),
@@ -463,6 +619,7 @@ private fun EndpointFields(config: GatewayConfig) {
                     }
                 }
             },
+            enabled = enabled,
             label = { Text("Port") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -473,32 +630,25 @@ private fun EndpointFields(config: GatewayConfig) {
 }
 
 @Composable
-private fun CommandPanel(state: GatewayUiState) {
+private fun CommandPanel(state: GatewayUiState, modifier: Modifier = Modifier) {
     val commands = state.commands()
-    val clipboard = LocalClipboardManager.current
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(containerColor = Panel),
         shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SectionTitle("Commands")
+            SectionTitle("Laptop")
             if (commands == null) {
-                Text("No command yet", color = TextSecondary, fontSize = 14.sp)
+                Text("Start gateway to show commands", color = TextSecondary, fontSize = 13.sp)
             } else {
-                CopyableCommand("SSH tunnel", commands.sshTunnel) {
-                    clipboard.setText(AnnotatedString(commands.sshTunnel))
-                }
-                CopyableCommand("ADB", commands.adbCommand) {
-                    clipboard.setText(AnnotatedString(commands.adbCommand))
-                }
+                CommandStep("1", commands.sshTunnel)
+                CommandStep("2", commands.adbCommand)
                 commands.extraAdbCommand?.let { command ->
-                    CopyableCommand("ADB check", command) {
-                        clipboard.setText(AnnotatedString(command))
-                    }
+                    CommandStep("3", command)
                 }
             }
         }
@@ -506,7 +656,7 @@ private fun CommandPanel(state: GatewayUiState) {
 }
 
 @Composable
-private fun CopyableCommand(label: String, command: String, onCopy: () -> Unit) {
+private fun CommandStep(label: String, command: String) {
     Surface(
         color = CodePanel,
         shape = RoundedCornerShape(8.dp),
@@ -515,47 +665,65 @@ private fun CopyableCommand(label: String, command: String, onCopy: () -> Unit) 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(label, color = TextSecondary, fontSize = 12.sp)
-                Text(
-                    text = command,
-                    color = TextPrimary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            IconButton(onClick = onCopy) {
-                Icon(Icons.Rounded.ContentCopy, contentDescription = "Copy $label", tint = AccentCyan)
-            }
+            Text(
+                text = label,
+                color = AccentCyan,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                modifier = Modifier.width(18.dp),
+            )
+            Text(
+                text = command,
+                color = TextPrimary,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                lineHeight = 15.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
         }
     }
 }
 
 @Composable
-private fun LogPanel(logs: List<LogEntry>) {
+private fun LogPanel(
+    logs: List<LogEntry>,
+    modifier: Modifier = Modifier,
+    expanded: Boolean = false,
+) {
+    val visibleLogs = logs.takeLast(160)
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(visibleLogs.lastOrNull()?.timestampMillis, visibleLogs.size) {
+        if (visibleLogs.isNotEmpty()) {
+            listState.scrollToItem(visibleLogs.lastIndex)
+        }
+    }
+
     ElevatedCard(
         colors = CardDefaults.elevatedCardColors(containerColor = Panel),
         shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .then(if (expanded) Modifier.fillMaxSize() else Modifier)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             SectionTitle("Log")
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(240.dp),
+                    .then(if (expanded) Modifier.weight(1f) else Modifier.height(240.dp)),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                val visibleLogs = logs.takeLast(80)
                 itemsIndexed(visibleLogs) { index, entry ->
                     LogLine(index, entry)
                 }
@@ -632,6 +800,7 @@ private fun GatewayStatus.color(): Color = when (this) {
     GatewayStatus.Ready,
     GatewayStatus.Running,
     GatewayStatus.ClientConnected -> AccentGreen
+    GatewayStatus.Starting,
     GatewayStatus.NoWifi,
     GatewayStatus.AdbUnavailable,
     GatewayStatus.BlockedPeer -> AccentAmber
