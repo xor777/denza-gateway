@@ -6,7 +6,11 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Shader;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.ColorDrawable;
 import android.hardware.display.DisplayManager;
@@ -24,6 +28,7 @@ import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.TextureView;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
@@ -42,6 +47,8 @@ public class AvcAidlDashActivity extends Activity {
     private static final long DEFAULT_DURATION_MS = 20000L;
     private static final String DEFAULT_SLOT = "full";
     private static final int DEFAULT_CENTER_EXTEND_PERCENT = 20;
+    private static final float EDGE_SHADE_HEIGHT_RATIO = 0.10f;
+    private static final int EDGE_SHADE_ALPHA = 230;
     static final String EXTRA_FINISH = "finish";
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -281,6 +288,10 @@ public class AvcAidlDashActivity extends Activity {
             textureView.setOpaque(true);
             textureView.setSurfaceTextureListener(this);
             surfaceFrame.addView(textureView, buildSurfaceViewParams(surfaceFrame));
+            surfaceFrame.addView(new EdgeShadeView(getContext()), new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+            ));
 
             setContentView(root);
             bindAvcService();
@@ -419,6 +430,57 @@ public class AvcAidlDashActivity extends Activity {
 
         private int extendedFrameWidth(int slotWidth) {
             return slotWidth + Math.round(slotWidth * (centerExtendPercent / 100.0f));
+        }
+
+        private static final class EdgeShadeView extends View {
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private LinearGradient topGradient;
+            private LinearGradient bottomGradient;
+            private int shaderWidth;
+            private int shaderHeight;
+            private int shaderFadeHeight;
+
+            EdgeShadeView(Context context) {
+                super(context);
+                setWillNotDraw(false);
+            }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                int width = getWidth();
+                int height = getHeight();
+                if (width <= 0 || height <= 0) {
+                    return;
+                }
+
+                int fadeHeight = Math.max(1, Math.round(height * EDGE_SHADE_HEIGHT_RATIO));
+                ensureGradients(width, height, fadeHeight);
+
+                paint.setShader(topGradient);
+                canvas.drawRect(0, 0, width, fadeHeight, paint);
+                paint.setShader(bottomGradient);
+                canvas.drawRect(0, height - fadeHeight, width, height, paint);
+                paint.setShader(null);
+            }
+
+            private void ensureGradients(int width, int height, int fadeHeight) {
+                if (topGradient != null
+                        && shaderWidth == width
+                        && shaderHeight == height
+                        && shaderFadeHeight == fadeHeight) {
+                    return;
+                }
+
+                int darkest = Color.argb(EDGE_SHADE_ALPHA, 0, 0, 0);
+                int transparent = Color.argb(0, 0, 0, 0);
+                topGradient = new LinearGradient(0, 0, 0, fadeHeight,
+                        darkest, transparent, Shader.TileMode.CLAMP);
+                bottomGradient = new LinearGradient(0, height - fadeHeight, 0, height,
+                        transparent, darkest, Shader.TileMode.CLAMP);
+                shaderWidth = width;
+                shaderHeight = height;
+                shaderFadeHeight = fadeHeight;
+            }
         }
 
         private void bindAvcService() {
