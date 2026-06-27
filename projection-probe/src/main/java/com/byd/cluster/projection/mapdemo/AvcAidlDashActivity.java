@@ -80,6 +80,7 @@ public class AvcAidlDashActivity extends Activity {
                 intent.getIntExtra("center_extend_percent", DEFAULT_CENTER_EXTEND_PERCENT)));
         boolean overlayWindow = intent.getBooleanExtra("overlay_window", true);
         boolean diagnosticPreview = intent.getBooleanExtra("diagnostic_preview", false);
+        boolean diagnosticVisible = intent.getBooleanExtra("diagnostic_visible", false);
         String previewMode = intent.getStringExtra("preview_mode");
         long durationMs = Math.max(1000L, intent.getLongExtra("duration_ms", DEFAULT_DURATION_MS));
         Display display = findClusterDisplay(this, requestedDisplayId);
@@ -97,7 +98,8 @@ public class AvcAidlDashActivity extends Activity {
                 presentation = null;
             }
             presentation = showPresentation(display, viewpoint, uTurnEnabled, slot,
-                    cropSource, centerExtendPercent, overlayWindow, diagnosticPreview, previewMode);
+                    cropSource, centerExtendPercent, overlayWindow,
+                    diagnosticPreview, diagnosticVisible, previewMode);
             Log.i(TAG, "avc aidl presentation shown displayId=" + display.getDisplayId()
                     + " name=" + display.getName()
                     + " viewpoint=" + viewpoint
@@ -106,6 +108,7 @@ public class AvcAidlDashActivity extends Activity {
                     + " centerExtendPercent=" + centerExtendPercent
                     + " overlayWindow=" + overlayWindow
                     + " diagnosticPreview=" + diagnosticPreview
+                    + " diagnosticVisible=" + diagnosticVisible
                     + " previewMode=" + previewMode
                     + " uturn=" + uTurnEnabled);
         } catch (RuntimeException e) {
@@ -122,9 +125,10 @@ public class AvcAidlDashActivity extends Activity {
     private AvcPresentation showPresentation(Display display, int viewpoint,
             boolean uTurnEnabled, String slot, String cropSource,
             int centerExtendPercent, boolean overlayWindow,
-            boolean diagnosticPreview, String previewMode) {
+            boolean diagnosticPreview, boolean diagnosticVisible, String previewMode) {
         AvcPresentation first = new AvcPresentation(this, display, viewpoint, uTurnEnabled,
-                slot, cropSource, centerExtendPercent, overlayWindow, diagnosticPreview, previewMode);
+                slot, cropSource, centerExtendPercent, overlayWindow,
+                diagnosticPreview, diagnosticVisible, previewMode);
         try {
             first.show();
             return first;
@@ -135,7 +139,7 @@ public class AvcAidlDashActivity extends Activity {
             Log.i(TAG, "overlay presentation failed, retrying normal window", e);
             AvcPresentation fallback = new AvcPresentation(this, display, viewpoint,
                     uTurnEnabled, slot, cropSource, centerExtendPercent, false,
-                    diagnosticPreview, previewMode);
+                    diagnosticPreview, diagnosticVisible, previewMode);
             fallback.show();
             return fallback;
         }
@@ -275,6 +279,7 @@ public class AvcAidlDashActivity extends Activity {
         private final int centerExtendPercent;
         private final boolean overlayWindow;
         private final boolean diagnosticPreview;
+        private final boolean diagnosticVisible;
         private final String previewMode;
         private SurfaceView surfaceView;
         private TextureView textureView;
@@ -304,7 +309,7 @@ public class AvcAidlDashActivity extends Activity {
         AvcPresentation(Context outerContext, Display display, int viewpoint,
                 boolean uTurnEnabled, String slot, String cropSource,
                 int centerExtendPercent, boolean overlayWindow,
-                boolean diagnosticPreview, String previewMode) {
+                boolean diagnosticPreview, boolean diagnosticVisible, String previewMode) {
             super(outerContext, display);
             this.viewpoint = viewpoint;
             this.uTurnEnabled = uTurnEnabled;
@@ -313,6 +318,7 @@ public class AvcAidlDashActivity extends Activity {
             this.centerExtendPercent = centerExtendPercent;
             this.overlayWindow = overlayWindow;
             this.diagnosticPreview = diagnosticPreview;
+            this.diagnosticVisible = diagnosticVisible;
             this.previewMode = previewMode;
         }
 
@@ -324,9 +330,14 @@ public class AvcAidlDashActivity extends Activity {
             root.setBackgroundColor(Color.TRANSPARENT);
 
             if (diagnosticPreview) {
-                addDiagnosticPreview(root);
+                if (diagnosticVisible) {
+                    addDiagnosticPreview(root);
+                } else {
+                    addInvisibleDiagnosticPreview(root);
+                }
                 setContentView(root);
-                setStatus("diagnostic preview shown mode=" + normalizedPreviewMode());
+                setStatus("diagnostic preview shown mode=" + normalizedPreviewMode()
+                        + " visible=" + diagnosticVisible);
                 return;
             }
 
@@ -358,6 +369,14 @@ public class AvcAidlDashActivity extends Activity {
             }
             root.addView(new DiagnosticPreviewView(getContext(), "CENTER"),
                     buildFrameParamsForSlot("center"));
+        }
+
+        private void addInvisibleDiagnosticPreview(FrameLayout root) {
+            root.addView(new InvisibleDiagnosticPreviewView(getContext()),
+                    new FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                    ));
         }
 
         private String normalizedPreviewMode() {
@@ -551,6 +570,22 @@ public class AvcAidlDashActivity extends Activity {
                 paint.setTextSize(Math.max(18f, height * 0.046f));
                 paint.setColor(Color.rgb(190, 226, 229));
                 canvas.drawText("Denza Mirrors check", width / 2f, height * 0.56f, paint);
+            }
+        }
+
+        private static final class InvisibleDiagnosticPreviewView extends View {
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+            InvisibleDiagnosticPreviewView(Context context) {
+                super(context);
+                setWillNotDraw(false);
+            }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Color.TRANSPARENT);
+                canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
             }
         }
 

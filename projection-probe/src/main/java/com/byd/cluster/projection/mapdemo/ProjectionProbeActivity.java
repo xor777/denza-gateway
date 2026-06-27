@@ -52,7 +52,8 @@ public class ProjectionProbeActivity extends Activity {
     private static final int TBT_CARD = 15;
     private static final int DASH_DISPLAY_ID = 4;
     private static final int PREVIEW_CENTER_EXTEND_PERCENT = 20;
-    private static final long DIAGNOSTIC_PREVIEW_DURATION_MS = 2200L;
+    private static final long VISIBLE_DIAGNOSTIC_PREVIEW_DURATION_MS = 2200L;
+    private static final long INVISIBLE_DIAGNOSTIC_PREVIEW_DURATION_MS = 1000L;
     private static final int STATE_STOPPED = 0;
     private static final int STATE_CHECKING = 1;
     private static final int STATE_READY = 2;
@@ -210,7 +211,7 @@ public class ProjectionProbeActivity extends Activity {
         monitorButtonParams.setMargins(0, dp(22), 0, dp(16));
         controls.addView(monitorButton, monitorButtonParams);
 
-        Button testButton = secondaryButton("Проверить", v -> runDiagnostics());
+        Button testButton = secondaryButton("Проверить", v -> runDiagnostics(true));
         LinearLayout.LayoutParams testButtonParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(46)
@@ -406,7 +407,7 @@ public class ProjectionProbeActivity extends Activity {
         applyUiState(STATE_CHECKING, "Checking", "Проверяю монитор камер...", "");
         SideCameraOverlayMonitorService.start(this);
         appendLog(logMessage);
-        runDiagnostics();
+        runDiagnostics(false);
     }
 
     private void toggleMonitor() {
@@ -422,7 +423,7 @@ public class ProjectionProbeActivity extends Activity {
         startMonitorFromUi("monitor start requested");
     }
 
-    private void runDiagnostics() {
+    private void runDiagnostics(boolean visiblePreview) {
         if (!SideCameraOverlayMonitorService.isMonitorEnabled(this)) {
             applyUiState(STATE_STOPPED, "Stopped",
                     "Монитор выключен. Нажмите Start, чтобы снова включить камеры.",
@@ -434,9 +435,11 @@ public class ProjectionProbeActivity extends Activity {
             return;
         }
         diagnosticsRunning = true;
-        appendLog("check started");
+        appendLog("check started preview=" + (visiblePreview ? "visible" : "hidden"));
         applyUiState(STATE_CHECKING, "Checking",
-                "Проверяю ADB, экран и тестовый вывод...", "");
+                visiblePreview
+                        ? "Проверяю ADB, экран и тестовый вывод..."
+                        : "Проверяю ADB и экран...", "");
         new Thread(() -> {
             String errorMessage = null;
             String detail = "";
@@ -459,21 +462,27 @@ public class ProjectionProbeActivity extends Activity {
                     } else {
                         appendLogOnUi("check adb: ok");
                         String mode = SideCameraOverlayMonitorService.getCameraPositionMode(this);
-                        appendLogOnUi("check preview: mode=" + mode);
-                        AvcAidlDashActivity.writeStatus(this, "diagnostic preview pending");
+                        appendLogOnUi("check preview: mode=" + mode
+                                + " visible=" + visiblePreview);
+                        AvcAidlDashActivity.writeStatus(this,
+                                "diagnostic preview pending visible=" + visiblePreview);
                         String previewOutput = adbClient.shell(buildDiagnosticPreviewCommand(
-                                display.getDisplayId(), mode));
+                                display.getDisplayId(), mode, visiblePreview));
                         appendLogOnUi("check preview start: "
                                 + summarizeAmStartOutput(previewOutput));
                         if (hasAmStartFailure(previewOutput)) {
-                            errorMessage = "Не удалось открыть тестовое окно на приборке.";
+                            errorMessage = visiblePreview
+                                    ? "Не удалось открыть тестовое окно на приборке."
+                                    : "Не удалось проверить экран перед водителем.";
                             detail = previewOutput.trim();
                         } else {
                             Thread.sleep(650L);
                             String previewStatus = AvcAidlDashActivity.readStatus(this);
                             appendLogOnUi("check preview status: " + compact(previewStatus));
                             if (!previewStatus.contains("diagnostic preview shown")) {
-                                errorMessage = "Тестовое окно не подтвердило запуск.";
+                                errorMessage = visiblePreview
+                                        ? "Тестовое окно не подтвердило запуск."
+                                        : "Экран не подтвердил скрытую проверку.";
                                 detail = previewStatus.isEmpty() ? "no preview status" : previewStatus;
                             }
                         }
@@ -607,7 +616,7 @@ public class ProjectionProbeActivity extends Activity {
         return "Диагностика не прошла. Нажмите Start ещё раз.";
     }
 
-    private String buildDiagnosticPreviewCommand(int displayId, String mode) {
+    private String buildDiagnosticPreviewCommand(int displayId, String mode, boolean visiblePreview) {
         return "am start -W --display " + displayId
                 + " -n " + getPackageName() + "/.AvcAidlDashActivity"
                 + " --ei display_id " + displayId
@@ -618,8 +627,11 @@ public class ProjectionProbeActivity extends Activity {
                 + " --ez overlay_window true"
                 + " --ez uturn false"
                 + " --ez diagnostic_preview true"
+                + " --ez diagnostic_visible " + visiblePreview
                 + " --es preview_mode " + mode
-                + " --el duration_ms " + DIAGNOSTIC_PREVIEW_DURATION_MS;
+                + " --el duration_ms " + (visiblePreview
+                        ? VISIBLE_DIAGNOSTIC_PREVIEW_DURATION_MS
+                        : INVISIBLE_DIAGNOSTIC_PREVIEW_DURATION_MS);
     }
 
     private boolean hasAmStartFailure(String output) {
