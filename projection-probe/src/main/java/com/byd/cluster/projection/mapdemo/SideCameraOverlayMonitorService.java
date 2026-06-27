@@ -38,7 +38,7 @@ public class SideCameraOverlayMonitorService extends Service {
     static final String CAMERA_POSITION_CENTER = "center";
     static final String STATUS_FILE_NAME = "side_camera_monitor_status.txt";
     private static final int NOTIFICATION_ID = 77;
-    private static final long POLL_MS = 150L;
+    private static final long POLL_MS = 100L;
     private static final long OVERLAY_RETRY_MS = 1500L;
     private static final int DISPLAY_ID = 4;
     private static final long OVERLAY_DURATION_MS = 300000L;
@@ -269,6 +269,13 @@ public class SideCameraOverlayMonitorService extends Service {
             String output = adbClient.shell(buildDashActivityCommand(
                     display.getDisplayId(), viewpoint, slot, cropSource, false));
             Log.i(TAG, "dash activity shell start output=" + output.trim());
+            if (isShellStartFailure(output)) {
+                setStatus("overlay activity failed: " + output.trim());
+                lastOverlayFailureMs = System.currentTimeMillis();
+                lastOverlayFailureSide = side;
+                moveToForeground("Overlay failed");
+                return false;
+            }
             mainHandler.removeCallbacks(overlayTimeoutRunnable);
             mainHandler.postDelayed(overlayTimeoutRunnable, OVERLAY_DURATION_MS);
             lastOverlayFailureSide = "";
@@ -285,7 +292,7 @@ public class SideCameraOverlayMonitorService extends Service {
 
     private String buildDashActivityCommand(int displayId, int viewpoint, String slot, String cropSource,
             boolean finish) {
-        return "am start -W --display " + displayId
+        return "am start --display " + displayId
                 + " -n " + getPackageName() + "/.AvcAidlDashActivity"
                 + " --ei display_id " + DISPLAY_ID
                 + " --ei viewpoint " + viewpoint
@@ -296,6 +303,17 @@ public class SideCameraOverlayMonitorService extends Service {
                 + " --ez uturn false"
                 + " --el duration_ms " + OVERLAY_DURATION_MS
                 + " --ez " + AvcAidlDashActivity.EXTRA_FINISH + " " + finish;
+    }
+
+    private static boolean isShellStartFailure(String output) {
+        if (output == null) {
+            return true;
+        }
+        return output.contains("Error:")
+                || output.contains("Exception")
+                || output.contains("SecurityException")
+                || output.contains("Status: timeout")
+                || output.contains("Status: failed");
     }
 
     private void startHudDiShareOverlay(String side) {
