@@ -26,6 +26,7 @@ import android.widget.LinearLayout;
 import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
@@ -216,7 +217,7 @@ public class ProjectionProbeActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(46)
         );
-        testButtonParams.setMargins(0, 0, 0, dp(24));
+        testButtonParams.setMargins(0, 0, 0, dp(18));
         controls.addView(testButton, testButtonParams);
 
         controls.addView(sectionTitle("Положение камеры"));
@@ -252,8 +253,73 @@ public class ProjectionProbeActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
         );
-        radioParams.setMargins(0, dp(8), 0, dp(20));
+        radioParams.setMargins(0, dp(8), 0, dp(16));
         controls.addView(positionGroup, radioParams);
+
+        controls.addView(sectionTitle("Обработка изображения"));
+        TextView imageValue = smallLabel(
+                SideCameraOverlayMonitorService.getImageEnhancementStrength(this) + "%");
+        imageValue.setGravity(Gravity.END);
+        LinearLayout.LayoutParams imageValueParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        imageValueParams.setMargins(0, dp(4), 0, 0);
+        controls.addView(imageValue, imageValueParams);
+
+        SeekBar imageSeekBar = new SeekBar(this);
+        imageSeekBar.setMax(100);
+        imageSeekBar.setProgress(SideCameraOverlayMonitorService.getImageEnhancementStrength(this));
+        imageSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                imageValue.setText(progress + "%");
+                if (fromUser) {
+                    SideCameraOverlayMonitorService.setImageEnhancementStrength(
+                            ProjectionProbeActivity.this, progress);
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                int progress = seekBar.getProgress();
+                SideCameraOverlayMonitorService.setImageEnhancementStrength(
+                        ProjectionProbeActivity.this, progress);
+                appendLog("image processing=" + progress + "%");
+            }
+        });
+        LinearLayout.LayoutParams imageSliderParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        imageSliderParams.setMargins(0, dp(4), 0, 0);
+        controls.addView(imageSeekBar, imageSliderParams);
+
+        LinearLayout imageScale = new LinearLayout(this);
+        imageScale.setOrientation(LinearLayout.HORIZONTAL);
+        TextView imageScaleStart = smallLabel("0");
+        TextView imageScaleEnd = smallLabel("100");
+        imageScaleEnd.setGravity(Gravity.END);
+        imageScale.addView(imageScaleStart, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+        ));
+        imageScale.addView(imageScaleEnd, new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+        ));
+        LinearLayout.LayoutParams imageScaleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        imageScaleParams.setMargins(0, 0, 0, dp(12));
+        controls.addView(imageScale, imageScaleParams);
 
         controls.addView(spacer(0, 1f));
 
@@ -267,6 +333,7 @@ public class ProjectionProbeActivity extends Activity {
         guide.addView(bodyText("Когда штатная система показывает камеру поворотника, Denza Mirrors открывает большое зеркало на экране перед водителем."));
         guide.addView(bodyText("Ready означает, что внутренний ADB отвечает, экран перед водителем найден, а монитор включён."));
         guide.addView(bodyText("«По сторонам» показывает камеры у краёв экрана. «По центру» открывает любую камеру в центре экрана."));
+        guide.addView(bodyText("«Обработка изображения»: 0 - штатная картинка, 100 - полный пресет."));
         guide.addView(bodyText("Если статус красный, посмотри короткое сообщение слева и нажми «Проверить» после загрузки системы."));
 
         TextView diagnosticsTitle = sectionTitle("Диагностика");
@@ -329,6 +396,14 @@ public class ProjectionProbeActivity extends Activity {
         params.setMargins(0, dp(12), 0, 0);
         body.setLayoutParams(params);
         return body;
+    }
+
+    private TextView smallLabel(String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(Color.rgb(151, 173, 181));
+        label.setTextSize(13);
+        return label;
     }
 
     private View spacer(int heightDp, float weight) {

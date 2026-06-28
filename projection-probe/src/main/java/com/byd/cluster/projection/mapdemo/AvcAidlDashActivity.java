@@ -8,12 +8,16 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.RenderEffect;
 import android.graphics.Shader;
 import android.graphics.SurfaceTexture;
 import android.graphics.drawable.ColorDrawable;
 import android.hardware.display.DisplayManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -39,6 +43,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public class AvcAidlDashActivity extends Activity {
     private static final String TAG = "DenzaProjectionProbe";
@@ -50,6 +56,12 @@ public class AvcAidlDashActivity extends Activity {
     private static final int DEFAULT_CENTER_EXTEND_PERCENT = 20;
     private static final float EDGE_SHADE_HEIGHT_RATIO = 0.20f;
     private static final int EDGE_SHADE_ALPHA = 179;
+    private static final int DEFAULT_IMAGE_ENHANCEMENT_STRENGTH = 100;
+    private static final float COLOR_CONTRAST_SCALE = 1.62f;
+    private static final float COLOR_BRIGHTNESS_OFFSET = 28.0f;
+    private static final float COLOR_SATURATION = 0.80f;
+    private static final String IMAGE_ENHANCEMENT_NORMAL = "normal";
+    private static final String IMAGE_ENHANCEMENT_CONTRAST = "contrast";
     private static final String STATUS_FILE_NAME = "avc_aidl_status.txt";
     static final String EXTRA_FINISH = "finish";
 
@@ -76,6 +88,13 @@ public class AvcAidlDashActivity extends Activity {
         boolean uTurnEnabled = intent.getBooleanExtra("uturn", false);
         String slot = normalizeSlot(intent.getStringExtra("slot"));
         String cropSource = normalizeCropSource(intent.getStringExtra("crop_source"));
+        String imageEnhancement = normalizeImageEnhancement(intent.getStringExtra("image_enhancement"));
+        int imageEnhancementStrength = Math.max(0, Math.min(100,
+                intent.getIntExtra("image_enhancement_strength",
+                        DEFAULT_IMAGE_ENHANCEMENT_STRENGTH)));
+        if (!IMAGE_ENHANCEMENT_CONTRAST.equals(imageEnhancement)) {
+            imageEnhancementStrength = 0;
+        }
         int centerExtendPercent = Math.max(0, Math.min(100,
                 intent.getIntExtra("center_extend_percent", DEFAULT_CENTER_EXTEND_PERCENT)));
         boolean overlayWindow = intent.getBooleanExtra("overlay_window", true);
@@ -98,13 +117,16 @@ public class AvcAidlDashActivity extends Activity {
                 presentation = null;
             }
             presentation = showPresentation(display, viewpoint, uTurnEnabled, slot,
-                    cropSource, centerExtendPercent, overlayWindow,
-                    diagnosticPreview, diagnosticVisible, previewMode);
+                    cropSource, imageEnhancement, imageEnhancementStrength,
+                    centerExtendPercent, overlayWindow, diagnosticPreview,
+                    diagnosticVisible, previewMode);
             Log.i(TAG, "avc aidl presentation shown displayId=" + display.getDisplayId()
                     + " name=" + display.getName()
                     + " viewpoint=" + viewpoint
                     + " slot=" + slot
                     + " cropSource=" + cropSource
+                    + " imageEnhancement=" + imageEnhancement
+                    + " imageEnhancementStrength=" + imageEnhancementStrength
                     + " centerExtendPercent=" + centerExtendPercent
                     + " overlayWindow=" + overlayWindow
                     + " diagnosticPreview=" + diagnosticPreview
@@ -124,11 +146,13 @@ public class AvcAidlDashActivity extends Activity {
 
     private AvcPresentation showPresentation(Display display, int viewpoint,
             boolean uTurnEnabled, String slot, String cropSource,
-            int centerExtendPercent, boolean overlayWindow,
-            boolean diagnosticPreview, boolean diagnosticVisible, String previewMode) {
+            String imageEnhancement, int imageEnhancementStrength,
+            int centerExtendPercent, boolean overlayWindow, boolean diagnosticPreview,
+            boolean diagnosticVisible, String previewMode) {
         AvcPresentation first = new AvcPresentation(this, display, viewpoint, uTurnEnabled,
-                slot, cropSource, centerExtendPercent, overlayWindow,
-                diagnosticPreview, diagnosticVisible, previewMode);
+                slot, cropSource, imageEnhancement, imageEnhancementStrength,
+                centerExtendPercent, overlayWindow, diagnosticPreview,
+                diagnosticVisible, previewMode);
         try {
             first.show();
             return first;
@@ -138,7 +162,8 @@ public class AvcAidlDashActivity extends Activity {
             }
             Log.i(TAG, "overlay presentation failed, retrying normal window", e);
             AvcPresentation fallback = new AvcPresentation(this, display, viewpoint,
-                    uTurnEnabled, slot, cropSource, centerExtendPercent, false,
+                    uTurnEnabled, slot, cropSource, imageEnhancement,
+                    imageEnhancementStrength, centerExtendPercent, false,
                     diagnosticPreview, diagnosticVisible, previewMode);
             fallback.show();
             return fallback;
@@ -195,6 +220,32 @@ public class AvcAidlDashActivity extends Activity {
         return true;
     }
 
+    static boolean finishActiveInstanceSync(long timeoutMs) {
+        AvcAidlDashActivity activity = activeInstance;
+        if (activity == null) {
+            return false;
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            activity.finishFast();
+            return true;
+        }
+
+        CountDownLatch latch = new CountDownLatch(1);
+        activity.runOnUiThread(() -> {
+            try {
+                activity.finishFast();
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await(Math.max(1L, timeoutMs), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return true;
+    }
+
     private void finishFast() {
         handler.removeCallbacksAndMessages(null);
         if (presentation != null) {
@@ -233,6 +284,12 @@ public class AvcAidlDashActivity extends Activity {
             return cropSource;
         }
         return "none";
+    }
+
+    private static String normalizeImageEnhancement(String imageEnhancement) {
+        return IMAGE_ENHANCEMENT_CONTRAST.equals(imageEnhancement)
+                ? IMAGE_ENHANCEMENT_CONTRAST
+                : IMAGE_ENHANCEMENT_NORMAL;
     }
 
     private static String shortError(Throwable throwable) {
@@ -276,6 +333,8 @@ public class AvcAidlDashActivity extends Activity {
         private final boolean uTurnEnabled;
         private final String slot;
         private final String cropSource;
+        private final String imageEnhancement;
+        private final int imageEnhancementStrength;
         private final int centerExtendPercent;
         private final boolean overlayWindow;
         private final boolean diagnosticPreview;
@@ -308,13 +367,16 @@ public class AvcAidlDashActivity extends Activity {
 
         AvcPresentation(Context outerContext, Display display, int viewpoint,
                 boolean uTurnEnabled, String slot, String cropSource,
-                int centerExtendPercent, boolean overlayWindow,
-                boolean diagnosticPreview, boolean diagnosticVisible, String previewMode) {
+                String imageEnhancement, int imageEnhancementStrength,
+                int centerExtendPercent, boolean overlayWindow, boolean diagnosticPreview,
+                boolean diagnosticVisible, String previewMode) {
             super(outerContext, display);
             this.viewpoint = viewpoint;
             this.uTurnEnabled = uTurnEnabled;
             this.slot = slot;
             this.cropSource = cropSource;
+            this.imageEnhancement = imageEnhancement;
+            this.imageEnhancementStrength = imageEnhancementStrength;
             this.centerExtendPercent = centerExtendPercent;
             this.overlayWindow = overlayWindow;
             this.diagnosticPreview = diagnosticPreview;
@@ -347,6 +409,7 @@ public class AvcAidlDashActivity extends Activity {
 
             textureView = new TextureView(getContext());
             textureView.setOpaque(true);
+            applyImageEnhancement(textureView);
             textureView.setSurfaceTextureListener(this);
             surfaceFrame.addView(textureView, buildSurfaceViewParams(surfaceFrame));
             surfaceFrame.addView(new EdgeShadeView(getContext()), new FrameLayout.LayoutParams(
@@ -522,6 +585,50 @@ public class AvcAidlDashActivity extends Activity {
 
         private int extendedFrameWidth(int slotWidth) {
             return slotWidth + Math.round(slotWidth * (centerExtendPercent / 100.0f));
+        }
+
+        private void applyImageEnhancement(TextureView view) {
+            float amount = Math.max(0f, Math.min(1f, imageEnhancementStrength / 100.0f));
+            if (!IMAGE_ENHANCEMENT_CONTRAST.equals(imageEnhancement) || amount <= 0f) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    view.setRenderEffect(null);
+                }
+                view.setLayerType(View.LAYER_TYPE_NONE, null);
+                return;
+            }
+
+            ColorMatrixColorFilter colorFilter =
+                    new ColorMatrixColorFilter(enhancementMatrix(amount));
+            Paint layerPaint = new Paint();
+            layerPaint.setColorFilter(colorFilter);
+            view.setLayerType(View.LAYER_TYPE_HARDWARE, layerPaint);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                view.setRenderEffect(RenderEffect.createColorFilterEffect(colorFilter));
+            }
+            Log.i(TAG, "image enhancement applied mode=" + imageEnhancement
+                    + " strength=" + imageEnhancementStrength
+                    + " sdk=" + Build.VERSION.SDK_INT);
+        }
+
+        private static ColorMatrix enhancementMatrix(float amount) {
+            float contrast = lerp(1.0f, COLOR_CONTRAST_SCALE, amount);
+            float brightness = COLOR_BRIGHTNESS_OFFSET * amount;
+            float saturation = lerp(1.0f, COLOR_SATURATION, amount);
+            float offset = (-0.5f * contrast + 0.5f) * 255f + brightness;
+            ColorMatrix contrastMatrix = new ColorMatrix(new float[] {
+                    contrast, 0f, 0f, 0f, offset,
+                    0f, contrast, 0f, 0f, offset,
+                    0f, 0f, contrast, 0f, offset,
+                    0f, 0f, 0f, 1f, 0f
+            });
+            ColorMatrix saturationMatrix = new ColorMatrix();
+            saturationMatrix.setSaturation(saturation);
+            saturationMatrix.postConcat(contrastMatrix);
+            return saturationMatrix;
+        }
+
+        private static float lerp(float from, float to, float amount) {
+            return from + (to - from) * amount;
         }
 
         private static final class DiagnosticPreviewView extends View {

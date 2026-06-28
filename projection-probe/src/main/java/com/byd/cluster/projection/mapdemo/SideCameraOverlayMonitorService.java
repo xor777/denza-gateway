@@ -34,12 +34,19 @@ public class SideCameraOverlayMonitorService extends Service {
     private static final String PREFS_NAME = "side_camera_monitor";
     private static final String KEY_ENABLED = "enabled";
     private static final String KEY_CAMERA_POSITION_MODE = "camera_position_mode";
+    private static final String KEY_IMAGE_ENHANCEMENT_MODE = "image_enhancement_mode";
+    private static final String KEY_IMAGE_ENHANCEMENT_STRENGTH = "image_enhancement_strength";
     static final String CAMERA_POSITION_SIDES = "sides";
     static final String CAMERA_POSITION_CENTER = "center";
+    static final String IMAGE_ENHANCEMENT_NORMAL = "normal";
+    static final String IMAGE_ENHANCEMENT_CONTRAST = "contrast";
+    static final String DEFAULT_IMAGE_ENHANCEMENT = IMAGE_ENHANCEMENT_CONTRAST;
+    static final int DEFAULT_IMAGE_ENHANCEMENT_STRENGTH = 100;
     static final String STATUS_FILE_NAME = "side_camera_monitor_status.txt";
     private static final int NOTIFICATION_ID = 77;
     private static final long POLL_MS = 100L;
     private static final long OVERLAY_RETRY_MS = 1500L;
+    private static final long FINISH_SYNC_TIMEOUT_MS = 250L;
     private static final int DISPLAY_ID = 4;
     private static final long OVERLAY_DURATION_MS = 300000L;
     private static final int CENTER_EXTEND_PERCENT = 20;
@@ -262,12 +269,17 @@ public class SideCameraOverlayMonitorService extends Service {
         }
 
         boolean centerMode = CAMERA_POSITION_CENTER.equals(getCameraPositionMode(this));
+        int imageEnhancementStrength = getImageEnhancementStrength(this);
+        String imageEnhancementMode = imageEnhancementStrength > 0
+                ? IMAGE_ENHANCEMENT_CONTRAST
+                : IMAGE_ENHANCEMENT_NORMAL;
         int viewpoint = "left".equals(side) ? 3205 : 3204;
         String slot = centerMode ? "center" : "left".equals(side) ? "left" : "right";
         String cropSource = "left".equals(side) ? "left" : "none";
         try {
             String output = adbClient.shell(buildDashActivityCommand(
-                    display.getDisplayId(), viewpoint, slot, cropSource, false));
+                    display.getDisplayId(), viewpoint, slot, cropSource,
+                    imageEnhancementMode, imageEnhancementStrength, false));
             Log.i(TAG, "dash activity shell start output=" + output.trim());
             if (isShellStartFailure(output)) {
                 setStatus("overlay activity failed: " + output.trim());
@@ -290,7 +302,8 @@ public class SideCameraOverlayMonitorService extends Service {
         }
     }
 
-    private String buildDashActivityCommand(int displayId, int viewpoint, String slot, String cropSource,
+    private String buildDashActivityCommand(int displayId, int viewpoint, String slot,
+            String cropSource, String imageEnhancementMode, int imageEnhancementStrength,
             boolean finish) {
         return "am start --display " + displayId
                 + " -n " + getPackageName() + "/.AvcAidlDashActivity"
@@ -298,6 +311,8 @@ public class SideCameraOverlayMonitorService extends Service {
                 + " --ei viewpoint " + viewpoint
                 + " --es slot " + slot
                 + " --es crop_source " + cropSource
+                + " --es image_enhancement " + imageEnhancementMode
+                + " --ei image_enhancement_strength " + imageEnhancementStrength
                 + " --ei center_extend_percent " + CENTER_EXTEND_PERCENT
                 + " --ez overlay_window true"
                 + " --ez uturn false"
@@ -375,12 +390,12 @@ public class SideCameraOverlayMonitorService extends Service {
             return;
         }
         mainHandler.removeCallbacks(overlayTimeoutRunnable);
-        if (!AvcAidlDashActivity.finishActiveInstance()) {
+        if (!AvcAidlDashActivity.finishActiveInstanceSync(FINISH_SYNC_TIMEOUT_MS)) {
             try {
                 Display display = AvcAidlDashActivity.findClusterDisplay(this, DISPLAY_ID);
                 adbClient.shell(buildDashActivityCommand(
                         display == null ? DISPLAY_ID : display.getDisplayId(),
-                        3205, "left", "left", true));
+                        3205, "left", "left", IMAGE_ENHANCEMENT_NORMAL, 0, true));
             } catch (Exception e) {
                 Log.i(TAG, "dash activity shell finish failed", e);
             }
@@ -506,6 +521,44 @@ public class SideCameraOverlayMonitorService extends Service {
                                 ? CAMERA_POSITION_CENTER
                                 : CAMERA_POSITION_SIDES)
                 .apply();
+    }
+
+    static String getImageEnhancementMode(Context context) {
+        String mode = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_IMAGE_ENHANCEMENT_MODE, DEFAULT_IMAGE_ENHANCEMENT);
+        return IMAGE_ENHANCEMENT_CONTRAST.equals(mode)
+                ? IMAGE_ENHANCEMENT_CONTRAST
+                : IMAGE_ENHANCEMENT_NORMAL;
+    }
+
+    static void setImageEnhancementMode(Context context, String mode) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_IMAGE_ENHANCEMENT_MODE,
+                        IMAGE_ENHANCEMENT_CONTRAST.equals(mode)
+                                ? IMAGE_ENHANCEMENT_CONTRAST
+                                : IMAGE_ENHANCEMENT_NORMAL)
+                .apply();
+    }
+
+    static int getImageEnhancementStrength(Context context) {
+        int strength = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getInt(KEY_IMAGE_ENHANCEMENT_STRENGTH, DEFAULT_IMAGE_ENHANCEMENT_STRENGTH);
+        return clampPercent(strength);
+    }
+
+    static void setImageEnhancementStrength(Context context, int strength) {
+        int clamped = clampPercent(strength);
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putInt(KEY_IMAGE_ENHANCEMENT_STRENGTH, clamped)
+                .putString(KEY_IMAGE_ENHANCEMENT_MODE,
+                        clamped > 0 ? IMAGE_ENHANCEMENT_CONTRAST : IMAGE_ENHANCEMENT_NORMAL)
+                .apply();
+    }
+
+    private static int clampPercent(int value) {
+        return Math.max(0, Math.min(100, value));
     }
 
     static String readStatus(Context context) {
