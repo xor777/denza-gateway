@@ -1,0 +1,10 @@
+<resources>
+    <style name="DenzaAppsTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:navigationBarColor">#080A0C</item>
+        <item name="android:statusBarColor">#080A0C</item>
+        <item name="android:windowBackground">#080A0C</item>
+    </style>
+</resources>

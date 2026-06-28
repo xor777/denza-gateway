@@ -350,7 +350,7 @@ public class HudDiShareActivity extends Activity {
             } else {
                 log("skip mirror source client");
             }
-            log("source registered for " + getPackageName());
+            log("source registered for " + clientPackageName());
 
             if (getIntent().getBooleanExtra("show_image", !mediaStreamEnabled)) {
                 handler.postDelayed(this::launchImage, 400);
@@ -406,7 +406,8 @@ public class HudDiShareActivity extends Activity {
         log("start control hud share");
         Intent intent = new Intent();
         intent.putExtra("command", "start_hud");
-        intent.putExtra("app", getPackageName());
+        intent.putExtra("app", controlAppName());
+        intent.putExtra("package", controlPackageName());
         intent.putExtra("receiver", getIntent().getStringExtra("receiver") == null
                 ? "screen_hud" : getIntent().getStringExtra("receiver"));
         intent.putExtra("provider", getIntent().getStringExtra("provider") == null
@@ -831,17 +832,38 @@ public class HudDiShareActivity extends Activity {
     private void callCreateClient() {
         Parcel data = Parcel.obtain();
         Parcel reply = Parcel.obtain();
+        String clientPackage = clientPackageName();
         try {
             data.writeInterfaceToken(API_DESCRIPTOR);
             data.writeStrongBinder(apiClient);
-            data.writeString(getPackageName());
+            data.writeString(clientPackage);
             transact(TX_CREATE_CLIENT, data, reply);
             reply.readException();
-            log("create client ok");
+            log("create client ok package=" + clientPackage);
         } finally {
             reply.recycle();
             data.recycle();
         }
+    }
+
+    private String clientPackageName() {
+        return stringExtra("client_package", getPackageName());
+    }
+
+    private String controlPackageName() {
+        return stringExtra("control_package", "com.byd.dishare");
+    }
+
+    private String controlAppName() {
+        return stringExtra("app", clientPackageName());
+    }
+
+    private String stringExtra(String name, String fallback) {
+        String value = getIntent().getStringExtra(name);
+        if (value == null || value.trim().isEmpty()) {
+            return fallback;
+        }
+        return value.trim();
     }
 
     private void callRemoveClient() {

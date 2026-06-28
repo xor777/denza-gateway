@@ -129,6 +129,212 @@ Watch logs with:
 adb logcat -v time -s DenzaDiShareProbe DiShareControlImpl PackageValidator
 ```
 
+## Simulcast App Change alias path
+
+Date/context: 2026-06-28, car package `com.byd.dishare`
+`1.5.1.1.23102ef`.
+
+The native App Change list is not built from normal launcher labels/icons alone.
+Reverse and live tests showed that DiShare uses its own `ShareApp` metadata from:
+
+- cloud endpoint: `https://video-cn.denzacloud.com/apiService/video/manager/videoList`
+- local cache: `com.byd.dishare` device-protected shared preferences `config`,
+  key `cloud_request_result`
+- read-only config provider: `content://com.byd.dishare.DynaConfigContentProvider`
+
+Normal shell access cannot write the DiShare cache:
+
+- `/data/user_de/0/com.byd.dishare` is permission denied for shell
+- `run-as com.byd.dishare` fails because the package is not a debug app
+- the DynaConfig provider can be queried, but insert/update paths are no-op
+
+Practical consequence: the native App Change row can expose whitelisted slots,
+but their visual name/icon may remain the stock Chinese/cloud entry. The current
+working path maps those slots to Russian target apps behind the scenes.
+
+Working implementation:
+
+- `denza-apps` starts `SourceKeeperService`, which registers source-only DiShare
+  clients for known whitelisted package names.
+- `simulcast-aliases/launcher` builds tiny APKs that occupy those package names.
+- When native Simulcast starts an alias inside `BYD-Mirror`, the alias calls
+  `DiShareProjectionBridge` to start the real Russian target package through the
+  DiShare control service, then closes the alias activity.
+- Source-only registrations use `2560x1440`; direct target shares use the proven
+  `1024x576` path. A previous attempt to force direct targets to `2560x1440`
+  caused the initial native share to open and close without moving the target app.
+- Fallback `startActivity()` is disabled inside `BYD-Mirror`; the car's
+  `MirrorContext` rejects non-whitelisted app starts there.
+
+Live verification:
+
+- Native App Change row, 2026-06-28:
+  - normal `/data/app` alias packages are installed for DiShare-whitelisted
+    package names such as `com.tencent.qqlive`, `com.mgtv.auto`,
+    `cn.cmvideo.car.play`, `com.youku.car`, `com.qiyi.video.pad`, and
+    `com.tencent.qqlive.audiobox`
+  - opening stock `com.byd.dishare/.app.ui.ShareDialogActivity` and pressing
+    App Change shows these slots in the native Simulcast row
+  - screenshot captured at `captures/simulcast-native-app-change-row.png`
+  - visible icons/text are still DiShare stock/cloud metadata, not the alias
+    APK launcher icon or label
+- VK slot:
+  - selected native slot `com.tencent.qqlive.audiobox`
+  - final `dumpsys display`: `BYD-Mirror`,
+    `virtual:com.byd.dishare,1000,BYD-Mirror,0`, `1024 x 576`
+  - final `dumpsys activity`: display `#23` top task
+    `com.vk.vkvideo/com.vk.video.screens.main.MainActivity`
+- Rutube slot:
+  - selected native slot `com.mgtv.auto`
+  - final `dumpsys display`: `BYD-Mirror`,
+    `virtual:com.byd.dishare,1000,BYD-Mirror,0`, `1024 x 576`
+  - final `dumpsys activity`: display `#25` top task
+    `ru.rutube.app/.ui.activity.tabs.RootActivity`
+
+Known limitation:
+
+- The row may still show the stock Simulcast icons/text. Making the native list
+  visually say VK/Rutube through the native adapter requires controlling
+  DiShare's `ShareApp` metadata cache/cloud response or finding another
+  writable normal-APK metadata entry. Installed launcher icon/label alone is
+  not enough.
+
+2026-06-28 native metadata follow-up:
+
+- A normal third-party APK does not need system uid to participate in Simulcast.
+  Live tests already prove a normal `/data/app` package can call DiShare's
+  exported control/API services and launch Russian targets on DiShare virtual
+  displays.
+- The native visual list is a separate problem. Decompiled DiShare code shows
+  `ShareAppLocalDataSource` reads `SharedPreferences("config")` key
+  `cloud_request_result` and deserializes it as Base64 Java serialization of
+  `List<ShareApp>`.
+- `CloudRequestService` is exported and triggers `UpdateShareAppUseCase`, but
+  it does not accept extras containing a custom app list. It refreshes from
+  `https://video-cn.denzacloud.com/apiService/video/manager/videoList` when
+  network is connected and the cached timestamp is older than one day.
+- The network response schema used by DiShare is `resultCode=0` with
+  `resultData[]` entries containing `packageName`, `appName`, `appIconUrl`, and
+  `backgroundImgUrl`. DiShare downloads those images and stores them inside
+  serialized `ShareApp` objects.
+- DiShare has `targetSdkVersion=31` and `usesCleartextTraffic=true`. The icon
+  URLs from `appIconUrl`/`backgroundImgUrl` can therefore be plain HTTP, but the
+  hard-coded `videoList` request itself is HTTPS.
+- No explicit OkHttp certificate pinning was found in the DiShare client setup,
+  but target SDK 31 means a normal user CA is not enough by default. A no-root
+  native-list path may still be possible through a controlled cloud-response or
+  proxy experiment, but it must prove TLS trust/routing on the car before it can
+  replace the overlay path.
+
+## No-root native Simulcast row workaround
+
+Goal: make the native Simulcast App Change flow look and behave like it has
+Russian apps without patching `/system` or writing `com.byd.dishare` private data.
+
+Confirmed blocker: DiShare does not use the installed launcher label/icon for the
+native row. The adapter renders `ShareApp.appIconStr` from the cloud/cache metadata
+instead. On a normal debug APK we cannot write that cache:
+
+- `com.byd.dishare` data is not readable/writable by `shell`
+- `run-as com.byd.dishare` is blocked
+- `DynaConfigContentProvider` query works, but update/insert paths are no-op
+- `adb backup` confirmation did not appear on the car, so backup/restore is not a
+  reliable write vector at the moment
+
+Current no-root custom drag approach:
+
+1. `denza-apps` opens the native Simulcast screen and shows
+   `SimulcastOverlayService`.
+2. The overlay draws the Russian app row over the stock App Change row, using
+   real installed target app icons via `PackageManager.getApplicationIcon()`.
+3. The overlay also draws a large selected-app preview over the native stock
+   preview, so the visible Simulcast UI presents Russian app icons even though
+   DiShare's underlying `ShareApp` metadata is still stock/cloud data.
+4. The overlay is touchable. It handles drag itself, draws the real target app
+   icon under the finger, maps the drop point to a DiShare receiver, then calls
+   `DiShareProjectionBridge.startToReceiver(...)`.
+5. Receiver hit zones are based on DiShare's decoded screen coordinates from
+   `window_share_layout_ivi_r`: `screen_hud`, `screen_fse`, `screen_overhead`,
+   `screen_rse_l`, `screen_rse_r`, with `screen_ivi` treated as the local/source
+   screen.
+6. `SimulcastOverlayService` queries DiShare `getScreens` through
+   `DiShareScreens` and filters drop zones to runtime-available receivers. On the
+   current car the available list is `screen_hud`, `screen_fse`, and
+   `screen_ivi`; rear/overhead zones are therefore not accepted even though their
+   layout coordinates are known for other models.
+7. On the wide IVI layout the overlay is anchored to the left DiShare panel
+   width (`839dp`) instead of centering on the full physical display. This keeps
+   the custom row aligned with the native App Change row when the right side is
+   occupied by navigation or another app.
+8. `SimulcastOverlayService` also exposes explicit debug actions for the same
+   code path:
+   - `dev.denza.apps.START_SIMULCAST_TARGET` with extras `targetPackage` and
+     `receiver`
+   - `dev.denza.apps.STOP_SIMULCAST_TARGET`
+   These are for repeatable ADB verification and for the Denza Apps stop button;
+   the user workflow remains opening Simulcast and dragging the visible Russian
+   app icon.
+
+Live verification:
+
+- 2026-06-28: `captures/simulcast-russian-overlay-preview-wide.png` shows the
+  custom Russian row and VK Video selected preview covering the native stock
+  App Change row/preview.
+- 2026-06-28: dragging the first custom icon to the HUD target launched
+  `com.vk.vkvideo/com.vk.video.screens.main.MainActivity` on DiShare virtual
+  display `#38`, `1024x576`, with `launchedFromPackage=com.byd.dishare`.
+- 2026-06-28 after dynamic screen query:
+  - `getScreens(com.byd.dishare)` returned
+    `[screen_hud available, screen_fse available, screen_ivi available]`
+  - VK Video -> HUD launched on display `#43`, `1024x576`, from
+    `com.byd.dishare`
+  - Rutube -> FSE launched on display `#44`, `1024x576`, from
+    `com.byd.dishare`
+
+Repeatable debug commands after installing the current APK:
+
+```bash
+./gradlew :denza-apps:assembleDebug :simulcast-aliases:launcher:assembleDebug
+tools/install_denza_apps_simulcast.sh
+
+adb shell am startservice \
+  -a dev.denza.apps.START_SIMULCAST_TARGET \
+  -p dev.denza.apps \
+  --es targetPackage com.vk.vkvideo \
+  --es receiver screen_hud
+
+adb shell am startservice \
+  -a dev.denza.apps.STOP_SIMULCAST_TARGET \
+  -p dev.denza.apps
+```
+
+Use `screen_fse`, `screen_overhead`, `screen_rse_l`, or `screen_rse_r` for the
+receiver when `DiShareScreens.getScreens` reports that receiver as available.
+Do not treat a failed command as product evidence if the ADB tunnel is offline
+or the host cannot reach `192.168.88.204:2222`.
+
+The one-shot receiver verifier is:
+
+```bash
+tools/dishare_overlay_receiver_test.sh com.vk.vkvideo screen_hud
+tools/dishare_overlay_receiver_test.sh ru.rutube.app screen_fse
+```
+
+The older `FLAG_NOT_TOUCHABLE` overlay plus `simulcast-aliases/launcher` path is
+kept as a useful fallback/research path, but it cannot produce a native-looking
+drag preview because the native Simulcast UI draws its own stock/Chinese icon.
+
+Known caveats:
+
+- Drop-zone coordinates are still a product calibration point. If BYD changes
+  the Simulcast layout or another model uses a different layout family, the
+  custom drag layer may need per-layout receiver bounds.
+- Native DiShare metadata injection is still unresolved. The native row uses
+  `ShareApp.appIconStr`/`appName` from DiShare's private cloud/local metadata,
+  not the installed APK launcher label/icon.
+- The no-root path is still valid. The open question is native visual metadata,
+  not whether a normal APK can participate in Simulcast.
+
 ## HUD camera streaming findings
 
 Working:

@@ -9,7 +9,7 @@ Use one of these lanes before editing code:
 | Lane | Allowed paths | Promotion requirement |
 | --- | --- | --- |
 | Product | `app/`, production parts of `projection-probe/` | Build succeeds, behavior is tested on the car or covered by tests, docs updated. |
-| Prototype | `projection-probe/`, `tools/` | Must be isolated behind flags, settings, or explicit commands. Document live-test result. |
+| Prototype | `projection-probe/`, `denza-apps/`, `dishare-bridge/`, `simulcast-aliases/`, `tools/` | Must be isolated behind flags, settings, or explicit commands. Document live-test result. |
 | Research | `research/`, `docs/*notes*`, host-only scripts | Must not be compiled into product APKs unless promoted. |
 
 If an experiment fails, keep the finding in docs or `research/`; do not leave dead services, manifest entries, or permissions in the product app.
@@ -50,6 +50,28 @@ Before moving research/prototype code into a product APK:
 - Do not add BYD/system permissions to `AndroidManifest.xml` unless the car has proven they are granted to this APK.
 - Do not commit generated APKs, reverse-engineered APKs, or large extracted binaries.
 
+## DiShare/Simulcast Rules
+
+- The current product candidate is `denza-apps` + `SimulcastOverlayService`:
+  Denza Apps has one Start/Stop button, then the monitor waits for Simulcast.
+  It does not draw immediately. When the user presses the native App Change
+  button, a touchable Russian app row is drawn with real installed app icons,
+  and drops are translated to `DiShareProjectionBridge` receiver starts.
+- Runtime receiver support must come from `DiShareScreens.getScreens`. Do not
+  hard-code a rear/HUD/passenger screen as usable just because its coordinates
+  are known in reverse-engineered resources.
+- Debug service/broadcast actions are allowed for verification only:
+  `dev.denza.apps.START_SIMULCAST_TARGET` and
+  `dev.denza.apps.STOP_SIMULCAST_TARGET`. Product UX should remain the normal
+  Simulcast drag flow unless deliberately redesigned.
+- Native App Change metadata remains research. Any `videoList`/proxy/cloud-cache
+  experiment must be run from `tools/dishare_native_metadata_probe.py`, must
+  document setup and revert commands, and must not be baked into the APK until it
+  is verified on the car without breaking normal network or DiShare behavior.
+- If an ADB/SSH tunnel drops during a live test, mark runtime evidence as
+  inconclusive. Reconnect and repeat the exact test before updating the verified
+  behavior section.
+
 ## Git Hygiene
 
 - Keep unrelated product changes and research changes in separate commits.
@@ -60,4 +82,5 @@ Before moving research/prototype code into a product APK:
 ```bash
 ./gradlew :app:testDebugUnitTest :app:assembleDebug
 ./gradlew :projection-probe:assembleDebug
+./gradlew :denza-apps:assembleDebug :simulcast-aliases:launcher:assembleDebug
 ```

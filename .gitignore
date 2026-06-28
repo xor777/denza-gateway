@@ -1,5 +1,6 @@
 .gradle/
 /build/
+**/build/
 /app/build/
 /projection-probe/build/
 /dist/

@@ -9,10 +9,22 @@ Current scripts:
 - `side_camera_overlay_monitor.sh`: older host-side monitor for side-camera windows and turn-light logcat events.
 - `turn_signal_overlay_monitor.sh`: older PIP/turn-signal overlay experiment.
 - `avc_alert_overlay_monitor.sh`: older AVC alert/window monitor experiment.
+- `dishare_native_metadata_probe.py`: controlled host-side probe for the native
+  DiShare App Change metadata path. It can export real installed Russian app
+  icons, generate a `mitmproxy` addon for `videoList`, collect DiShare state, and
+  explicitly set/revert the Android global proxy. Default commands are read-only.
+- `dishare_overlay_receiver_test.sh`: repeatable live verifier for the current
+  `denza-apps` overlay path. It starts a selected Russian target package on a
+  selected DiShare receiver through `SimulcastOverlayService`, then prints
+  display/window/log evidence.
+- `install_denza_apps_simulcast.sh`: installs the current `denza-apps` APK and
+  all Simulcast alias APK flavors, enables the overlay app-op, and starts source
+  registration. Requires the APKs to be built first.
 
 When adding a tool, include:
 
 - expected ADB serial or tunnel;
 - exact scenario it tests;
 - known side effects;
-- whether the result should update `docs/side-camera-findings.md`.
+- whether the result should update `docs/side-camera-findings.md` or
+  `docs/dishare-api-notes.md`.
