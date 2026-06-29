@@ -8,21 +8,46 @@ Use one of these lanes before editing code:
 
 | Lane | Allowed paths | Promotion requirement |
 | --- | --- | --- |
-| Product | `app/`, production parts of `projection-probe/` | Build succeeds, behavior is tested on the car or covered by tests, docs updated. |
-| Prototype | `projection-probe/`, `denza-apps/`, `dishare-bridge/`, `simulcast-aliases/`, `tools/` | Must be isolated behind flags, settings, or explicit commands. Document live-test result. |
+| Product | `denza-gateway/`, production parts of `denza-mirrors/` (`dev.denza.mirrors`), `denza-apps/`, `dishare-bridge/` | Build succeeds, behavior is tested on the car or covered by tests, docs updated. |
+| Prototype | `denza-mirrors/` probe package (`dev.denza.mirrors.probe`), new features in `denza-apps/`, `tools/` | Must be isolated behind flags, settings, or explicit commands. Document live-test result. |
 | Research | `research/`, `docs/*notes*`, host-only scripts | Must not be compiled into product APKs unless promoted. |
 
-If an experiment fails, keep the finding in docs or `research/`; do not leave dead services, manifest entries, or permissions in the product app.
+If an experiment fails, keep the finding in docs or `research/`; do not leave dead
+services, manifest entries, or permissions in the product app.
+
+## Where experiments live
+
+"Poking the car" must not leak into product code. Pick the right home:
+
+- **Host-side probes** → `tools/` (shell/python run from the laptop).
+- **On-device probes for an existing product's domain** → a `…​.probe` subpackage
+  of that product module. Today that is `dev.denza.mirrors.probe`; its components
+  are grouped under an EXPERIMENTAL section in the manifest.
+- **Parked / non-built code** → `research/<topic>/` with a README.
+
+Rules:
+
+- Product code (`dev.denza.mirrors`) must not depend on `dev.denza.mirrors.probe`.
+  The one current exception — `SideCameraOverlayMonitorService` driving
+  `HudDiShareActivity` — is left as a visible cross-package import and a cleanup
+  TODO; resolve it before extracting probes into a separate module.
+- When poking expands to a genuinely different area (not camera/DiShare), create a
+  dedicated experiment module instead of overloading `denza-mirrors`. Extract any
+  helper shared with a product app into a library module (e.g. alongside
+  `dishare-bridge`).
 
 ## Knowledge Rules
 
 Record durable knowledge in the repo, not only in chat.
 
-- Product behavior and user-facing workflows: update `README.md` or a focused doc under `docs/`.
+- Product behavior and user-facing workflows: update `README.md` or a focused doc
+  under `docs/`.
 - Reverse-engineering findings: update `docs/*notes*.md`.
 - Camera/turn-signal findings: update `docs/side-camera-findings.md`.
-- Research code that may be useful later: move it under `research/<topic>/` with a README explaining why it is not built.
-- One-off host scripts: keep under `tools/` and state whether they are production candidates or probes.
+- Research code that may be useful later: move it under `research/<topic>/` with a
+  README explaining why it is not built.
+- One-off host scripts: keep under `tools/` and state whether they are production
+  candidates or probes.
 
 Every durable note should include:
 
@@ -33,22 +58,30 @@ Every durable note should include:
 
 ## Promotion Checklist
 
-Before moving research/prototype code into a product APK:
+Before moving research/prototype code into a product APK (or out of a `…​.probe`
+package into product code):
 
 - The code path has been tested on the car in the target scenario.
 - The failure mode is understood and documented.
-- Required permissions are available to a normal `/data/app` APK, or the limitation is explicit.
+- Required permissions are available to a normal `/data/app` APK, or the
+  limitation is explicit.
 - The feature can be disabled from the UI or by stopping the service.
 - It does not crash or restart stock components such as `com.byd.avc`.
-- The README or relevant doc says how to build, install, start, stop, and diagnose it.
+- The README or relevant doc says how to build, install, start, stop, and
+  diagnose it.
 
 ## Live Car Debugging Rules
 
-- Treat `com.byd.avc` crashes as a hard stop. Capture `logcat -b crash -v time`, document the trigger, then revert or isolate the change.
-- Keep the last known working APK behavior easy to restore before trying a risky experiment.
-- Prefer host-side scripts in `tools/` for speculative probes before adding code to the Android app.
-- Do not add BYD/system permissions to `AndroidManifest.xml` unless the car has proven they are granted to this APK.
-- Do not commit generated APKs, reverse-engineered APKs, or large extracted binaries.
+- Treat `com.byd.avc` crashes as a hard stop. Capture `logcat -b crash -v time`,
+  document the trigger, then revert or isolate the change.
+- Keep the last known working APK behavior easy to restore before trying a risky
+  experiment.
+- Prefer host-side scripts in `tools/` for speculative probes before adding code
+  to the Android app.
+- Do not add BYD/system permissions to `AndroidManifest.xml` unless the car has
+  proven they are granted to this APK.
+- Do not commit generated APKs, reverse-engineered APKs, or large extracted
+  binaries.
 
 ## DiShare/Simulcast Rules
 
@@ -80,7 +113,7 @@ Before moving research/prototype code into a product APK:
 - Run at least the relevant Gradle build before publishing code changes:
 
 ```bash
-./gradlew :app:testDebugUnitTest :app:assembleDebug
-./gradlew :projection-probe:assembleDebug
-./gradlew :denza-apps:assembleDebug :simulcast-aliases:launcher:assembleDebug
+./gradlew :denza-gateway:testDebugUnitTest :denza-gateway:assembleDebug
+./gradlew :denza-mirrors:assembleDebug
+./gradlew :denza-apps:assembleDebug
 ```

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 serial="${1:-127.0.0.1:5557}"
-package="com.byd.cluster.projection.mapdemo"
+package="dev.denza.mirrors"
 activity="${package}/.AvcAidlDashActivity"
 
 display_id="${DISPLAY_ID:-4}"

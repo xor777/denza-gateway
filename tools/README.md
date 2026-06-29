@@ -17,9 +17,10 @@ Current scripts:
   `denza-apps` overlay path. It starts a selected Russian target package on a
   selected DiShare receiver through `SimulcastOverlayService`, then prints
   display/window/log evidence.
-- `install_denza_apps_simulcast.sh`: installs the current `denza-apps` APK and
-  all Simulcast alias APK flavors, enables the overlay app-op, and starts source
-  registration. Requires the APKs to be built first.
+- `install_denza_apps_simulcast.sh`: installs the current `denza-apps` APK,
+  enables the overlay app-op, and opens the app. Requires the APK to be built
+  first. (The old Simulcast alias APKs are no longer installed; the accessibility
+  overlay replaced them — see `research/simulcast-aliases/`.)
 
 When adding a tool, include:
 

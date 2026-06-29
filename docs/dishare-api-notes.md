@@ -103,15 +103,15 @@ app uids.
 
 ```bash
 adb shell am start -W \
-  -n com.byd.cluster.projection.mapdemo/.DiShareProbeActivity \
+  -n dev.denza.mirrors/.probe.DiShareProbeActivity \
   --es command probe
 
 adb shell am start -W \
-  -n com.byd.cluster.projection.mapdemo/.DiShareProbeActivity \
+  -n dev.denza.mirrors/.probe.DiShareProbeActivity \
   --es command start_hud
 
 adb shell am start -W \
-  -n com.byd.cluster.projection.mapdemo/.DiShareProbeActivity \
+  -n dev.denza.mirrors/.probe.DiShareProbeActivity \
   --es command stop
 ```
 
@@ -167,7 +167,7 @@ Working implementation:
 
 - `denza-apps` starts `SourceKeeperService`, which registers source-only DiShare
   clients for known whitelisted package names.
-- `simulcast-aliases/launcher` builds tiny APKs that occupy those package names.
+- `research/simulcast-aliases/launcher` builds tiny APKs that occupy those package names.
 - When native Simulcast starts an alias inside `BYD-Mirror`, the alias calls
   `DiShareProjectionBridge` to start the real Russian target package through the
   DiShare control service, then closes the alias activity.
@@ -305,7 +305,7 @@ Live verification:
 Repeatable debug commands after installing the current APK:
 
 ```bash
-./gradlew :denza-apps:assembleDebug :simulcast-aliases:launcher:assembleDebug
+./gradlew :denza-apps:assembleDebug
 tools/install_denza_apps_simulcast.sh
 
 adb shell am startservice \
@@ -331,7 +331,7 @@ tools/dishare_overlay_receiver_test.sh com.vk.vkvideo screen_hud
 tools/dishare_overlay_receiver_test.sh ru.rutube.app screen_fse
 ```
 
-The older `FLAG_NOT_TOUCHABLE` overlay plus `simulcast-aliases/launcher` path is
+The older `FLAG_NOT_TOUCHABLE` overlay plus `research/simulcast-aliases/launcher` path is
 kept as a useful fallback/research path, but it cannot produce a native-looking
 drag preview because the native Simulcast UI draws its own stock/Chinese icon.
 

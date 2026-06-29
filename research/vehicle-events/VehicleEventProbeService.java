@@ -1,4 +1,4 @@
-package com.byd.cluster.projection.mapdemo;
+package dev.denza.mirrors.probe;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -47,15 +47,15 @@ import java.util.regex.Pattern;
 /**
  * Archived research-only service.
  *
- * Keep this outside projection-probe/src so it is not compiled into the normal app.
+ * Keep this outside denza-mirrors/src so it is not compiled into the normal app.
  * The service reflected BYD vehicle APIs, registered listeners, and sampled safe getters
  * while writing results to app-private files.
  */
 public class VehicleEventProbeService extends Service {
     static final String ACTION_START =
-            "com.byd.cluster.projection.mapdemo.START_VEHICLE_EVENT_PROBE";
+            "dev.denza.mirrors.START_VEHICLE_EVENT_PROBE";
     static final String ACTION_STOP =
-            "com.byd.cluster.projection.mapdemo.STOP_VEHICLE_EVENT_PROBE";
+            "dev.denza.mirrors.STOP_VEHICLE_EVENT_PROBE";
 
     static final String STATUS_FILE_NAME = "vehicle_event_probe_status.txt";
     static final String LOG_FILE_NAME = "vehicle_event_probe.log";
@@ -696,7 +696,7 @@ public class VehicleEventProbeService extends Service {
     }
 
     private Notification buildNotification(String text) {
-        Intent openIntent = new Intent(this, ProjectionProbeActivity.class);
+        Intent openIntent = new Intent(this, MainActivity.class);
         PendingIntent contentIntent = PendingIntent.getActivity(this, 10, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         PendingIntent stopIntent = PendingIntent.getService(this, 11,

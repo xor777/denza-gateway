@@ -2,7 +2,7 @@
 set -euo pipefail
 
 serial="${1:-127.0.0.1:5557}"
-package="com.byd.cluster.projection.mapdemo"
+package="dev.denza.mirrors"
 activity="${package}/.AvcAidlDashActivity"
 overlay_duration_ms="${OVERLAY_DURATION_MS:-300000}"
 overlay_delay_s="${OVERLAY_DELAY_S:-0.20}"
