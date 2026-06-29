@@ -1,5 +1,11 @@
 # Simulcast aliases
 
+> PARKED / DEPRECATED (moved to `research/` on 2026-06-29). This module is no
+> longer in `settings.gradle.kts` and is not built. The `denza-apps`
+> accessibility overlay replaced it. Kept only as a reference/fallback path. To
+> build it again you must re-add `include(":simulcast-aliases:launcher")` (now
+> at `research/simulcast-aliases/launcher`) to `settings.gradle.kts`.
+
 Small launcher-only apps that occupy package names already whitelisted by
 `com.byd.dishare` for Simulcast App Change.
 
@@ -54,7 +60,7 @@ Current verified behavior on 2026-06-28:
 This is intentionally separate from `denza-gateway` and `denza-mirrors`; it is a
 Simulcast/DiShare compatibility helper.
 
-Build:
+Build (only after re-adding the module to `settings.gradle.kts`):
 
 ```bash
 ./gradlew :simulcast-aliases:launcher:assembleDebug
@@ -63,7 +69,7 @@ Build:
 Install all generated alias APKs:
 
 ```bash
-for apk in simulcast-aliases/launcher/build/outputs/apk/*/debug/simulcast-alias-*.apk; do
+for apk in research/simulcast-aliases/launcher/build/outputs/apk/*/debug/simulcast-alias-*.apk; do
   adb install -r "$apk"
 done
 ```
