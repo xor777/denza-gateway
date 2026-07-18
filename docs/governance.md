@@ -2,14 +2,16 @@
 
 This file is the lightweight operating manual for future work in this repo.
 
-## Change Lanes
+## Lifecycle and Change Lanes
 
 Use one of these lanes before editing code:
 
-| Lane | Allowed paths | Promotion requirement |
+| Lane | Allowed paths | Rule |
 | --- | --- | --- |
-| Product | `denza-gateway/`, production parts of `denza-mirrors/` (`dev.denza.mirrors`), `denza-apps/`, `dishare-bridge/` | Build succeeds, behavior is tested on the car or covered by tests, docs updated. |
-| Prototype | `denza-mirrors/` probe package (`dev.denza.mirrors.probe`), new features in `denza-apps/`, `tools/` | Must be isolated behind flags, settings, or explicit commands. Document live-test result. |
+| Active product | `apps/car-adb-gateway/`, `apps/denza-apps/`, `libraries/dishare-bridge/`, `platform/cli/`, `platform/relay/`, `ops/` | Build/test the affected path, verify hardware-dependent behavior on the car, and update the closest doc. |
+| Migration | Production parts of `apps/denza-mirrors/` and corresponding new code in `apps/denza-apps/` | Preserve verified behavior while moving it behind a Denza Apps feature boundary. Avoid unrelated standalone Mirrors features. |
+| Legacy | `legacy/denza-gateway/`; later, the retired Denza Mirrors app | Maintenance and safe-retirement work only. Do not add features or create new dependencies on legacy code. |
+| Prototype | `apps/denza-mirrors/` probe package (`dev.denza.mirrors.probe`), experimental features in `apps/denza-apps/`, `tools/` | Isolate behind flags, settings, or explicit commands. Document the live-test result. |
 | Research | `research/`, `docs/*notes*`, host-only scripts | Must not be compiled into product APKs unless promoted. |
 
 If an experiment fails, keep the finding in docs or `research/`; do not leave dead
@@ -122,4 +124,5 @@ package into product code):
 ./gradlew :denza-gateway:testDebugUnitTest :denza-gateway:assembleDebug
 ./gradlew :denza-mirrors:assembleDebug
 ./gradlew :denza-apps:assembleDebug
+./gradlew :car-adb-gateway:testDebugUnitTest :car-adb-gateway:assembleDebug
 ```

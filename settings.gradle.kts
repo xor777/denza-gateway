@@ -14,9 +14,19 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "denza-gateway"
-include(":denza-gateway")
-include(":denza-mirrors")
-include(":dishare-bridge")
-include(":denza-apps")
+rootProject.name = "denza-lab"
+
 include(":car-adb-gateway")
+project(":car-adb-gateway").projectDir = file("apps/car-adb-gateway")
+
+include(":denza-apps")
+project(":denza-apps").projectDir = file("apps/denza-apps")
+
+include(":denza-mirrors")
+project(":denza-mirrors").projectDir = file("apps/denza-mirrors")
+
+include(":dishare-bridge")
+project(":dishare-bridge").projectDir = file("libraries/dishare-bridge")
+
+include(":denza-gateway")
+project(":denza-gateway").projectDir = file("legacy/denza-gateway")

@@ -4,17 +4,18 @@ Guidance for working in this repository (humans and AI).
 
 ## What this is
 
-A monorepo for reverse-engineering a Denza / BYD head unit and building useful
-apps on it. Three concerns are kept separate on purpose:
+Denza Lab is a monorepo for reverse-engineering a Denza / BYD head unit and
+building useful apps on it. Three concerns are kept separate on purpose:
 
-- **Apps** — Car ADB Gateway, Denza Gateway, Denza Mirrors, Denza Apps.
+- **Apps** — Car ADB Gateway and Denza Apps are active; Denza Mirrors is being
+  merged into Denza Apps; Denza Gateway is legacy/maintenance-only.
 - **Poking the car** — host scripts in `tools/`, on-device probes in
   `dev.denza.mirrors.probe`.
 - **Knowledge of what works / doesn't** — `docs/` (durable) and `research/`
   (parked code).
 
-Directory name = product. The repo is still called `denza-gateway` for
-historical reasons and will be renamed.
+The GitHub repository is `xor777/denza-lab`. An existing local checkout may
+still use the historical `denza-gateway` directory name.
 
 ## Read before changing code
 
@@ -28,11 +29,11 @@ historical reasons and will be renamed.
 
 | Gradle | Path | App id / namespace |
 | --- | --- | --- |
-| `:denza-gateway` | `denza-gateway/` | `dev.denza.gateway` (Kotlin/Compose) |
-| `:denza-mirrors` | `denza-mirrors/` | `dev.denza.mirrors` (product) + `dev.denza.mirrors.probe` (research) |
-| `:denza-apps` | `denza-apps/` | `dev.denza.apps`, depends on `:dishare-bridge` |
-| `:dishare-bridge` | `dishare-bridge/` | `dev.denza.disharebridge` (library) |
-| `:car-adb-gateway` | `car-adb-gateway/` | `ru.adbgw.gateway` (generic relay-only app) |
+| `:denza-gateway` | `legacy/denza-gateway/` | `dev.denza.gateway` (legacy/maintenance-only) |
+| `:denza-mirrors` | `apps/denza-mirrors/` | `dev.denza.mirrors` (transition) + `dev.denza.mirrors.probe` (research) |
+| `:denza-apps` | `apps/denza-apps/` | `dev.denza.apps` (active consolidation app), depends on `:dishare-bridge` |
+| `:dishare-bridge` | `libraries/dishare-bridge/` | `dev.denza.disharebridge` (library) |
+| `:car-adb-gateway` | `apps/car-adb-gateway/` | `ru.adbgw.gateway` (active product candidate) |
 
 ## Build
 
@@ -51,9 +52,13 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 - Product code must not depend on `…​.probe` code. (One known exception is
   documented in project-map/governance as a cleanup TODO.)
 - Product apps share car-access code only via `:dishare-bridge`.
+- Do not add features to `:denza-gateway`. Limit changes to maintenance or work
+  required to retire it safely.
+- New camera behavior belongs in `:denza-apps`; treat `:denza-mirrors` as the
+  migration source, not a new standalone product direction.
 - `:car-adb-gateway` is relay-only. Do not add a LAN listener or configurable
   relay without updating the CAG decision log first.
-- Deploy `relay/` only through `ops/ansible`; keep code/grant transitions locked,
+- Deploy `platform/relay/` only through `ops/ansible`; keep code/grant transitions locked,
   atomic, and covered by relay tests.
 - New "poke the car" code goes to `tools/` (host) or a `…​.probe` package
   (on-device), never into a product package.

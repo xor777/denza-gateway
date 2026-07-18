@@ -1,30 +1,32 @@
 # Project Map
 
-This repository is a small monorepo: a few Android product apps, one shared
-library, plus research/tooling areas. Directory names match product names.
+This repository is a small monorepo: Android apps at different lifecycle stages,
+one shared library, remote-access infrastructure, and research/tooling areas.
+The repository is **Denza Lab** (`xor777/denza-lab`). An existing local checkout
+may still use the historical `denza-gateway` directory name.
 
 ## Apps
 
 | Path | APK / product | Purpose | Status |
 | --- | --- | --- | --- |
-| `denza-gateway/` | `denza-gateway` | SSH gateway from the car LAN to local ADB endpoints on the head unit. | Product app. Keep changes conservative and test with unit tests. |
-| `denza-mirrors/` | `denza-mirrors` | Driver-display side-camera enlargement for turn-signal camera windows. | Prototype/product app. Product code lives in `dev.denza.mirrors`; research probes are isolated in `dev.denza.mirrors.probe`. |
-| `denza-apps/` | `denza-apps` | Head app for Denza features. Adds Russian apps to the native Simulcast App Change row via an accessibility overlay, with a configurable app picker. | Prototype app. Self-contained: only this APK + in-app local ADB setup after key authorization are needed on any car; the app grants overlay app-op and enables its accessibility service itself. |
-| `car-adb-gateway/` | `car-adb-gateway` | Generic relay-only remote ADB gateway. Fixed `adbgw.ru`, one trusted computer, background recovery, no LAN listener. | Product candidate. Local unit/build evidence exists; relay deployment, live-head-unit E2E, API matrix, and soak remain required. |
+| `legacy/denza-gateway/` | `denza-gateway` | SSH gateway from the car LAN to local ADB endpoints on the head unit. | **Legacy.** Maintenance-only; do not add features. Car ADB Gateway supersedes it for new remote-access work. |
+| `apps/denza-mirrors/` | `denza-mirrors` | Driver-display side-camera enlargement for turn-signal camera windows. | **Transition.** Source for the camera migration into Denza Apps. Product code lives in `dev.denza.mirrors`; research probes are isolated in `dev.denza.mirrors.probe`. |
+| `apps/denza-apps/` | `denza-apps` | Consolidated head-unit app for Denza features. Adds supported apps to the native Simulcast App Change row and will absorb Denza Mirrors behavior. | **Active.** Self-contained: the APK performs its local ADB setup after key authorization, grants the overlay app-op, and enables its accessibility service. |
+| `apps/car-adb-gateway/` | `car-adb-gateway` | Generic relay-only remote ADB gateway. Fixed `adbgw.ru`, one trusted computer, background recovery, no LAN listener. | Product candidate. Local unit/build evidence exists; relay deployment, live-head-unit E2E, API matrix, and soak remain required. |
 
 ## Shared Android Modules
 
 | Path | Purpose | Rules |
 | --- | --- | --- |
-| `dishare-bridge/` | Raw DiShare binder bridge used by `denza-apps` for screen discovery and starting/stopping shares. | Keep API notes in `docs/dishare-api-notes.md` aligned with transaction behavior. This is the only place product apps may share car-access code. |
+| `libraries/dishare-bridge/` | Raw DiShare binder bridge used by `denza-apps` for screen discovery and starting/stopping shares. | Keep API notes in `docs/dishare-api-notes.md` aligned with transaction behavior. This is the only place product apps may share car-access code. |
 
 ## Supporting Areas
 
 | Path | Purpose | Rules |
 | --- | --- | --- |
 | `docs/` | Stable project knowledge, decisions, and investigation summaries. | Update when behavior, commands, or known limitations change. |
-| `relay/` | Car ADB Gateway relay state engine and restricted SSH/PAM commands. | Deploy only through `ops/ansible`; state updates must remain locked, atomic, and idempotent. |
-| `cli/` | Cross-platform `cag` developer CLI for macOS/Linux. | Do not edit user SSH config; keep relay and vehicle host-key pinning strict. |
+| `platform/relay/` | Car ADB Gateway relay state engine and restricted SSH/PAM commands. | Deploy only through `ops/ansible`; state updates must remain locked, atomic, and idempotent. |
+| `platform/cli/` | Cross-platform `cag` developer CLI for macOS/Linux. | Do not edit user SSH config; keep relay and vehicle host-key pinning strict. |
 | `ops/ansible/` | Repeatable relay host provisioning and verification. | Never place private keys/passwords in inventory; verify before any live deploy. |
 | `tools/` | Host-side scripts for one-off live experiments. | Scripts are not production paths until promoted through `docs/governance.md`. |
 | `research/` | Code that is not built into product APKs (parked experiments, deprecated modules). | Keep failed or permission-blocked probes here, not in app source. Includes `research/simulcast-aliases/` (deprecated) and `research/vehicle-events/` (parked probe). |
@@ -69,14 +71,14 @@ the relevant probes into a dedicated experiment module rather than overloading
 
 ## Component Inventory
 
-### `denza-gateway/` (`denza-gateway`)
+### `legacy/denza-gateway/` (`denza-gateway`)
 
 | Component | Status |
 | --- | --- |
 | `MainActivity`, `GatewayService`, `SshGatewayServer` | Product path for LAN SSH forwarding to local ADB. |
 | `AdbProbe`, `ProbePlan`, `ForwardingPolicy` | Product support code with unit tests. |
 
-### `car-adb-gateway/` (`car-adb-gateway`)
+### `apps/car-adb-gateway/` (`car-adb-gateway`)
 
 | Component | Status |
 | --- | --- |
@@ -85,14 +87,14 @@ the relevant probes into a dedicated experiment module rather than overloading
 | `AdbEndpointDetector`, `AdbProvisioner` | Smart/raw endpoint discovery with own-IPv4 fallback and normal Android ADB-key approval. |
 | `MainActivity` | Landscape-first nontechnical onboarding, status/activity, pair/replace, persistent disconnect, hidden support details. |
 
-### `relay/` and `cli/`
+### `platform/relay/` and `platform/cli/`
 
 | Component | Status |
 | --- | --- |
-| `relay/cag_state.py` + wrappers | Atomic state, expiring codes, source lockout, device enrollment, pending/commit replacement, dynamic restricted keys. Provisioning not yet deployed. |
-| `cli/cmd/cag` | Go client for `pair`, `connect`, ADB execution, `status`, and `disconnect`; Darwin/Linux builds verified locally. |
+| `platform/relay/cag_state.py` + wrappers | Atomic state, expiring codes, source lockout, device enrollment, pending/commit replacement, dynamic restricted keys. Provisioning not yet deployed. |
+| `platform/cli/cmd/cag` | Go client for `pair`, `connect`, ADB execution, `status`, and `disconnect`; Darwin/Linux builds verified locally. |
 
-### `denza-mirrors/` (`denza-mirrors`)
+### `apps/denza-mirrors/` (`denza-mirrors`)
 
 Product package `dev.denza.mirrors`:
 
@@ -112,11 +114,11 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 | `AvcTurnSignalMonitorService`, `AvcTurnSignalMonitorActivity` | Legacy direct BYD light API probe. Permission-blocked in normal app tests; not a production trigger. |
 | `AvcPipHookActivity`, `DashCameraActivity`, `DashPresentationActivity`, `ProjectionTargetActivity`, `ProjectionCommand*`, map demo activities | Historical probes/demos. Confirm live value before editing or invoking. |
 
-### `denza-apps/`
+### `apps/denza-apps/`
 
 | Component | Status |
 | --- | --- |
-| `MainActivity` | Start/Stop control plus "Выбрать приложения"; in-app local-ADB setup grants overlay app-op and enables the Simulcast accessibility service. |
+| `MainActivity` | Start/Stop control plus the app picker; in-app local-ADB setup grants the overlay app-op and enables the Simulcast accessibility service. |
 | `AppPickerActivity` | App selection UI — a horizontal slider of all installed apps; tap to mark up to 6 for casting. Defaults to installed-subset of VK Video / Rutube / Kinopoisk / Yandex Navi / VLC / YouTube. |
 | `SimulcastApps` | Persists the chosen casting packages (prefs) and seeds defaults. |
 | `SimulcastAccessibilityService` | Active visual path. Watches the native DiShare `ShareDialogActivity` via accessibility, reads live node bounds, and erases+redraws the App Change row + central preview with the chosen Russian apps; drag → launch through `dishare-bridge`. |
@@ -124,7 +126,7 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 | `SimulcastOverlayService` | Casting controller: launches the target through `dishare-bridge` at `2560x1440`, stops it, and shows the floating native exit control over the casting app. No longer draws the dialog overlay. |
 | `SimulcastBootReceiver` | Forwards DiShare dialog broadcasts (to sync the exit control) and debug START/STOP actions. |
 
-### `dishare-bridge/`
+### `libraries/dishare-bridge/`
 
 | Component | Status |
 | --- | --- |
@@ -140,16 +142,18 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 
 ## Current Product Direction
 
-- `denza-gateway` is the connectivity app. It should not contain camera or HUD
-  experiments.
-- `car-adb-gateway` is the generic relay-only connectivity app. It must not grow
-  a LAN mode; the old `denza-gateway` remains the LAN product.
-- `denza-mirrors` is the camera app. The supported path is dashboard/instrument
-  display enlargement via the AVC AIDL dashboard overlay. Experimental code stays
-  in `dev.denza.mirrors.probe`.
-- `denza-apps` is the head app for miscellaneous car features. The working path is
-  Simulcast for Russian video apps via an accessibility overlay that redraws the
-  native App Change row with the user's chosen apps.
+- `car-adb-gateway` is the active generic relay-only connectivity app. It must
+  not grow a LAN mode.
+- `denza-apps` is the single active Denza feature app. Its working Simulcast path
+  uses an accessibility overlay that redraws the native App Change row with the
+  user's chosen apps. Supported camera behavior should move here behind a clear
+  feature boundary.
+- `denza-mirrors` is in transition. Use it as the verified source for the camera
+  migration and for fixes needed to complete that migration; do not grow it as a
+  separate product.
+- `denza-gateway` is legacy and maintenance-only. The source remains buildable
+  for existing installations, but new connectivity work belongs in Car ADB
+  Gateway.
 - For Simulcast, normal app uid is enough for direct DiShare launches. The native
   `ShareApp` visual metadata is solved at the UI layer: the accessibility overlay
   erases the stock row and paints the chosen apps over it (no metadata injection,
@@ -160,6 +164,18 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 - Vehicle event APIs are research-only for now. Normal app uid access to direct
   BYD getters/listeners was permission-blocked or did not deliver useful
   callbacks.
+
+## Planned Directory Cleanup
+
+Keep Denza Mirrors under `apps/` while it is being merged into Denza Apps. Its
+Gradle module name stays stable until the migration is verified.
+
+After the migration has been verified on a real head unit:
+
+1. move the supported camera behavior into Denza Apps;
+2. verify the consolidated app on a real head unit;
+3. remove Denza Mirrors from the default Gradle build;
+4. move its frozen source under `legacy/`.
 
 ## Build Outputs
 
@@ -175,10 +191,10 @@ Generated APKs are intentionally ignored by Git.
 Useful local APK paths:
 
 ```text
-denza-gateway/build/outputs/apk/debug/denza-gateway.apk
-denza-mirrors/build/outputs/apk/debug/denza-mirrors.apk
-denza-apps/build/outputs/apk/debug/denza-apps.apk
-car-adb-gateway/build/outputs/apk/debug/car-adb-gateway.apk
+legacy/denza-gateway/build/outputs/apk/debug/denza-gateway.apk
+apps/denza-mirrors/build/outputs/apk/debug/denza-mirrors.apk
+apps/denza-apps/build/outputs/apk/debug/denza-apps.apk
+apps/car-adb-gateway/build/outputs/apk/debug/car-adb-gateway.apk
 ```
 
 Do not stage APK files. If a large APK appears in `git status`, fix `.gitignore`
