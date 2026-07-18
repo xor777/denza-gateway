@@ -417,8 +417,94 @@ Not working as an ordinary `/data/app` debug APK:
 
 Practical conclusion:
 
-- The product camera path now stays on the selected driver display through the
-  Denza Apps cluster scene and the migrated AVC AIDL renderer. The standalone
-  `AvcAidlDashActivity` remains only as the transition reference.
+- The migrated AVC AIDL renderer is still the compatibility path for the
+  selected driver display, but it is not safe during a stock AVC surface
+  transition. The standalone `AvcAidlDashActivity` remains only as the
+  transition reference.
 - Treat HUD camera output as experimental unless the APK can run with
   system/platform privileges or another non-protected frame source is found.
+
+### Live-car side-switch safety finding (2026-07-18)
+
+The migrated renderer reproduced the signature of the unresolved fast
+side-switch failure from Denza Mirrors. After the diagnostic presentation
+succeeded, the requested left-then-right test recorded `showing left`; before a
+right frame appeared, the stock `com.byd.avc` process crashed twice: first with
+`SIGSEGV` in `ANativeWindow_getWidth` from
+`VideocatManagerImpl.native_setSurface`, then with `SIGABRT` in
+`libvc_sdk_ui.so`. Mirrors were disabled and Denza Apps was force-stopped; the
+next AVC process remained stable.
+
+The first implementation tore down the AVC display, released its `Surface`, and
+called `initDisplay` again for every side change. A follow-up candidate kept one
+bound AVC display and one `Surface`, switched only the viewpoint, waited 350 ms
+for a stable stock window, and bridged a 1,000 ms no-window gap. That candidate
+failed live at 21:10 and again at 21:18 with the same `SIGSEGV` stack. Keeping a
+Surface is therefore not a fix.
+
+Decompiled stock behavior explains the repeatable failure. The stock
+`PIPViewAlertController.modeChange()` compares its current `SurfaceHolder`
+surface with `IPanoAPI.getSurface()` and calls its own `initDisplay(stockSurface)`
+when they differ. Any successful Denza Apps AIDL `initDisplay(appSurface)` makes
+them differ. The next stock mode transition then enters the vendor native
+`setSurface` path and can dereference a null `ANativeWindow`. The failure is
+competition for a single vendor display surface, not only timing around
+left-to-right teardown.
+
+Later live work also exposed a single-side teardown regression in the migrated
+scene. At 22:06:23 the stock left window disappeared, but Denza Apps called
+`freeDisplay()` while its `TextureView` surface was still attached. The enlarged
+frame froze, and at 22:06:26 `com.byd.avc` aborted in `libvc_sdk_ui.so`; the frame
+disappeared only after the persistent process restarted. The standalone Denza
+Mirrors order was the reverse: dismiss the presentation and destroy the surface,
+then free the AVC display. Restoring that order and putting cameras back on the
+named `shared_fission_bg_XDJAScreenProjection_1` overlay display fixed isolated
+left and right open/close cycles. The post-fix AVC PID stayed `14737` and the
+crash buffer remained empty.
+
+This restores the pause-based Denza Mirrors compatibility behavior. Rapid
+left-to-right switching remains unverified after the fix and must still be
+treated as the known unsafe case.
+
+### Stock-owned non-AIDL candidate (2026-07-18)
+
+The stock cluster projection service is not a general escape hatch. Its Binder
+service resolves the real calling package, accepts only configured system
+packages, and permits `com.byd.avc` only for
+`CLUSTER_LEFT + PICTURE_IN_PICTURE_CARD`. It rejects Denza Apps and has no right
+PIP contract.
+
+A more promising path is to display an already-rendered stock window without
+calling AVC AIDL. Shell UID on this firmware has `ACCESS_SURFACE_FLINGER`,
+`READ_FRAME_BUFFER`, and `INTERNAL_SYSTEM_WINDOW`. The host-side
+`tools/SurfaceControlMirrorProbe.java` uses
+`IWindowManager.mirrorDisplay(displayId, SurfaceControl)` and
+`SurfaceControl.captureLayers(...)`. Controlled live tests captured:
+
+- display `0` at 640x400, including the Denza Apps UI;
+- display `3`, including the stock cluster scene;
+- a live stock left camera on display `4`;
+- the live right-camera window from display `0`.
+
+The camera layers were neither secure nor protected in these captures, but the
+path is not a usable product replacement. The live left copy was drawn below the
+car's physically composited stock display-4 card, producing a duplicate. The
+right source required the stock camera window to remain on the main screen and
+copied its text and controls. A compositor color transform intended to reproduce
+the image enhancement yielded black output, and a later copy was not stable.
+All SurfaceControl integration was removed from Denza Apps; the two host tools
+remain research-only evidence.
+
+Parked return point for a future non-AVC attempt:
+
+1. keep both Denza Apps and standalone Denza Mirrors monitors stopped;
+2. use `tools/surface_control_mirror_probe.sh` to re-confirm a single live stock
+   source (`4` for the left-camera display, `0` for the right IVI window);
+3. use `tools/surface_control_display_overlay_probe.sh` only for a short,
+   unprocessed crop and remove it before changing sides;
+4. investigate a shell-owned buffer/crop pipeline that can exclude stock text
+   and controls and place its output above the stock display-4 card without
+   recursively capturing its own output;
+5. do not restore product integration until one isolated left and one isolated
+   right cycle close cleanly, image processing works, and no AVC call or crash
+   appears in the trace.

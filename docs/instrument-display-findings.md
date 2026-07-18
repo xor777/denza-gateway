@@ -5,22 +5,26 @@ Mirrors and navigation. Current implementation status is dated 2026-07-18.
 
 ## Product architecture
 
-`denza-apps` owns one transparent `ClusterSceneService` on the selected
-instrument display:
+`denza-apps` owns two transparent presentations in one `ClusterSceneService`,
+matching the two-layer Denza display composition verified on the car:
 
-- a full-size `SurfaceView` is the base layer for the Yandex Navigator virtual
-  display;
-- a `TextureView` is the camera layer and can cover the selected third without
-  resizing or restarting the map;
-- diagnostics are a temporary top layer and are visible only after the user
+- a full-size `SurfaceView` on
+  `shared_fission_bg_XDJAScreenProjection_0` is the base layer for the Yandex
+  Navigator virtual display;
+- a separate `TextureView` presentation on
+  `shared_fission_bg_XDJAScreenProjection_1` is the stock-compatible camera
+  overlay layer;
+- camera diagnostics use the same overlay display and are visible only after the user
   presses **Check** in Denza Apps or chooses a display in hidden Support.
 
 `ClusterDisplayResolver` deliberately fails closed. It uses a saved manual
 override, the exact known Denza display name
 `shared_fission_bg_XDJAScreenProjection_0`, `cluster`/`fission` name evidence,
-real dimensions, and display characteristics. It excludes IVI, rear/RSE,
-overhead, DiShare, and Denza Apps' own virtual displays. It does not fall back to
-display `2` or `4`; ambiguous candidates require the hidden display check.
+real dimensions, and display characteristics. The camera overlay is selected
+separately by the exact known name
+`shared_fission_bg_XDJAScreenProjection_1`. It excludes IVI, rear/RSE, overhead,
+DiShare, and Denza Apps' own virtual displays. Neither path falls back to a
+numeric display ID; an absent or ambiguous candidate fails closed.
 
 ## Mirrors behavior preserved in Denza Apps
 
@@ -37,13 +41,15 @@ the reference behavior:
   peak at alpha `179`;
 - camera shutdown waits up to 250 ms and a failed start is retried no sooner
   than 1,500 ms;
-- the invisible startup display check lasts 1 second; the colored manual check
-  lasts 2.2 seconds.
+- shutdown dismisses the overlay window first, allowing Android to destroy the
+  `TextureView` surface, and calls AVC `freeDisplay()` only afterward. This is
+  the lifecycle order used by the standalone Denza Mirrors implementation;
+- the colored manual check is temporary and does not start AVC.
 
-The monitor now compares the stock left-camera window with the display ID
-chosen by `ClusterDisplayResolver`; the old unconditional `mDisplayId=4` match
-is gone. It uses the shared `dishare-bridge` local ADB client and does not import
-probe code or the abandoned HUD camera path.
+The monitor compares the stock left-camera window with the camera-overlay
+display chosen by `ClusterDisplayResolver`; the old unconditional
+`mDisplayId=4` match is gone. It uses the shared `dishare-bridge` local ADB
+client and does not import probe code or the abandoned HUD camera path.
 
 ## Navigation projection
 
@@ -75,18 +81,24 @@ placement. OpenBYD is not treated as ground truth.
 
 ## Verification status and hard stops
 
-Local unit tests and both `:denza-apps:assembleDebug` and
-`:denza-mirrors:assembleDebug` pass. Hardware-dependent behavior is not yet
-accepted:
+Local unit tests and `:denza-apps:assembleDebug` pass. APK
+`581cada3a07ce22ffaa41a7546abf443b9a6292af9d321bed61c1da4dbf2e79f`
+was installed on the car on 2026-07-18. With **Sides** and processing enabled,
+one isolated left cycle and one isolated right cycle both opened and closed the
+enlarged image; the monitor ended at `stopped right: window hidden`, the AVC PID
+remained `14737`, and the clean post-install crash buffer stayed empty.
+
+Hardware-dependent behavior still awaiting acceptance:
 
 - N9 rear/overhead Simulcast receivers are implemented by contract but need
   `getScreens`, accessibility-tree, and one-receiver-at-a-time captures;
-- left/right, Sides/Center, processing, preview, and camera-over-map behavior
+- Center placement, processing off, manual preview, and camera-over-map behavior
   must be repeated on the car;
 - Yandex task movement, bounds/focus restoration, proxy death, lost ADB, and APK
   restart require live testing;
-- fast left-to-right turn-signal switching remains unresolved until a clean
-  hardware run proves otherwise.
+- fast left-to-right turn-signal switching is a confirmed crash path while
+  Denza Apps owns the AVC display surface. The persistent-Surface candidate did
+  not fix it; pause-based operation remains a known compatibility limitation.
 
 Any crash in `com.byd.avc` is a hard stop. Stop the monitor and collect:
 
@@ -106,5 +118,14 @@ move it to `legacy/denza-mirrors`.
   APK or did not deliver useful callbacks.
 - HUD camera streaming through DiShare can render generated or app-accessible
   Camera2 frames, but protected AVC/side-camera frames were black or unavailable.
+- The stock cluster projection Binder is package-allowlisted and exposes only a
+  left PIP card for `com.byd.avc`; it cannot provide a right-card API to Denza
+  Apps.
+- Shell `IWindowManager.mirrorDisplay` captured the normal IVI, the stock cluster
+  display, a live left-camera display, and the right-camera window on the IVI
+  without calling AVC AIDL. Product embedding was rejected: the left stock card
+  remained physically composited above the copy, the right copy required the
+  stock IVI window and included its controls/text, and the color-transform
+  experiment produced black output. The tools remain host-side research only.
 - The old `HudDiShareActivity`, map demos, and `.probe` camera paths are not part
   of the Denza Apps product implementation.
