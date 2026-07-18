@@ -43,6 +43,7 @@ data class DenzaUiState(
     ),
     val navigationButtonLabel: String = "Открыть Яндекс",
     val selectedAppCount: Int = 0,
+    val selectedAppLabels: List<String> = emptyList(),
     val mirrorsPosition: MirrorsPosition = MirrorsPosition.SIDES,
     val mirrorsProcessing: Boolean = true,
     val setupRunning: Boolean = false,
@@ -95,6 +96,7 @@ object DenzaAppRepository {
             simulcast = snapshot,
             mirrors = evaluateMirrors(context),
             selectedAppCount = SimulcastApps.selectedCount(context),
+            selectedAppLabels = selectedAppLabels(context),
             mirrorsPosition = MirrorsSettings.position(context),
             mirrorsProcessing = MirrorsSettings.processingEnabled(context),
             navigation = navigationSnapshot(navigationSession.phase, navigationSession.message, navigationSession.details),
@@ -121,6 +123,26 @@ object DenzaAppRepository {
 
     fun repairSimulcast() {
         reconcileSimulcast(repairMissingSetup = true, forceRepair = true)
+    }
+
+    fun launchSimulcast() {
+        val context = appContext ?: return
+        if (!SimulcastIntegration.isEnabled(context)) {
+            SimulcastIntegration.setEnabled(context, true)
+        }
+        reconcileSimulcast(repairMissingSetup = true)
+        val launch = context.packageManager.getLaunchIntentForPackage(DISHARE_PACKAGE)
+        if (launch == null) {
+            mutableState.value = mutableState.value.copy(
+                simulcast = FeatureReducer.needsAction(
+                    FeatureReducer.starting(FeatureId.SIMULCAST),
+                    "Simulcast не найден",
+                ),
+            )
+            return
+        }
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(launch)
     }
 
     fun showAppPicker() {
@@ -415,18 +437,47 @@ object DenzaAppRepository {
     }
 
     private fun diagnostics(context: Context): String = buildString {
-        appendLine("Denza Apps 0.2.0")
-        appendLine("Simulcast desired=${SimulcastIntegration.isEnabled(context)}")
-        appendLine("DiShare installed=${isInstalled(context.packageManager, DISHARE_PACKAGE)}")
-        appendLine("Overlay allowed=${hasOverlayPermission(context)}")
-        appendLine("Accessibility enabled=${isAccessibilityEnabled(context)}")
-        appendLine("Selected apps=${SimulcastApps.selectedCount(context)}")
-        appendLine("Mirrors desired=${MirrorsSettings.isEnabled(context)}")
-        appendLine("Mirrors position=${MirrorsSettings.position(context)}")
-        appendLine("Mirrors processing=${MirrorsSettings.processingEnabled(context)}")
-        appendLine("Mirrors runtime=${MirrorsSettings.statusDetails(context)}")
-        appendLine("Cluster selection=${ClusterDisplayResolver.resolve(context)}")
-        append("Navigation=${NavigationCoordinator.snapshot()}")
+        appendLine("Версия=0.2.0")
+        appendLine("DiShare=${yesNo(isInstalled(context.packageManager, DISHARE_PACKAGE))}")
+        appendLine("Доступ поверх окон=${yesNo(hasOverlayPermission(context))}")
+        appendLine("Управление интерфейсом=${yesNo(isAccessibilityEnabled(context))}")
+        appendLine("Трансляция=${enabledLabel(SimulcastIntegration.isEnabled(context))}")
+        appendLine("Выбрано приложений=${SimulcastApps.selectedCount(context)}")
+        appendLine("Зеркала=${enabledLabel(MirrorsSettings.isEnabled(context))}")
+        appendLine(
+            "Расположение зеркал=" + if (MirrorsSettings.position(context) == MirrorsPosition.CENTER) {
+                "По центру"
+            } else {
+                "По сторонам"
+            },
+        )
+        appendLine("Улучшение изображения=${enabledLabel(MirrorsSettings.processingEnabled(context))}")
+        appendLine("Состояние зеркал=${mirrorRuntimeLabel(MirrorsSettings.statusDetails(context))}")
+        appendLine("Экран приборки=${clusterSelectionLabel(ClusterDisplayResolver.resolve(context))}")
+        val navigation = NavigationCoordinator.snapshot()
+        append("Навигация=${navigation.message.ifBlank { navigation.phase.name.lowercase() }}")
+    }
+
+    private fun yesNo(value: Boolean) = if (value) "Доступен" else "Недоступен"
+
+    private fun enabledLabel(value: Boolean) = if (value) "Включено" else "Выключено"
+
+    private fun mirrorRuntimeLabel(value: String): String = when {
+        value == "monitor running" -> "Монитор работает"
+        value == "monitor stopped" -> "Монитор остановлен"
+        value == "disabled after com.byd.avc failure" -> "Отключены после сбоя штатной камеры"
+        value.startsWith("showing left") -> "Показывается левая камера"
+        value.startsWith("showing right") -> "Показывается правая камера"
+        value.isBlank() -> "Нет данных"
+        else -> value
+    }
+
+    private fun clusterSelectionLabel(selection: ClusterDisplaySelection): String = when (selection) {
+        is ClusterDisplaySelection.Selected -> with(selection.display) {
+            "#$id · ${width}×$height · $name"
+        }
+        is ClusterDisplaySelection.NeedsVerification -> "Нужно выбрать экран"
+        ClusterDisplaySelection.Missing -> "Не найден"
     }
 
     private fun loadAppChoices(context: Context): List<SimulcastAppChoice> {
@@ -450,6 +501,15 @@ object DenzaAppRepository {
                     .thenBy(String.CASE_INSENSITIVE_ORDER) { it.label },
             )
     }
+
+    private fun selectedAppLabels(context: Context): List<String> =
+        SimulcastApps.getSelected(context).map { packageName ->
+            runCatching {
+                context.packageManager.getApplicationLabel(
+                    context.packageManager.getApplicationInfo(packageName, 0),
+                ).toString()
+            }.getOrDefault(packageName)
+        }
 
     private fun isInstalled(packageManager: PackageManager, packageName: String): Boolean = try {
         packageManager.getApplicationInfo(packageName, 0)

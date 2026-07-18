@@ -16,6 +16,7 @@ class MainActivity : ComponentActivity() {
                 DenzaAppsRoot(
                     state = DenzaAppRepository.state,
                     onToggleSimulcast = DenzaAppRepository::setSimulcastEnabled,
+                    onLaunchSimulcast = DenzaAppRepository::launchSimulcast,
                     onRepairSimulcast = DenzaAppRepository::repairSimulcast,
                     onToggleMirrors = DenzaAppRepository::setMirrorsEnabled,
                     onMirrorsPosition = DenzaAppRepository::setMirrorsPosition,

@@ -1,21 +1,29 @@
 package dev.denza.apps.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -24,7 +32,6 @@ import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -36,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,7 +60,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,11 +82,16 @@ private val Muted = Color(0xFF9AA7AD)
 private val Accent = Color(0xFF73E0BD)
 private val Warning = Color(0xFFF2C46D)
 private val Danger = Color(0xFFFF8B91)
+private val DisabledSurface = Color(0xFF181A1B)
+private val DisabledElevated = Color(0xFF222426)
+private val DisabledInk = Color(0xFFB7BCBE)
+private val DisabledMuted = Color(0xFF7D8487)
 
 @Composable
 fun DenzaAppsRoot(
     state: StateFlow<DenzaUiState>,
     onToggleSimulcast: (Boolean) -> Unit,
+    onLaunchSimulcast: () -> Unit,
     onRepairSimulcast: () -> Unit,
     onToggleMirrors: (Boolean) -> Unit,
     onMirrorsPosition: (MirrorsPosition) -> Unit,
@@ -94,26 +107,21 @@ fun DenzaAppsRoot(
     var showSupport by remember { mutableStateOf(false) }
     var showTechnical by remember { mutableStateOf(false) }
     var titleTaps by remember { mutableIntStateOf(0) }
+    val selectedAppNames = uiState.selectedAppLabels
+        .asSequence()
+        .joinToString(", ")
+        .ifBlank { "Список пока пуст" }
 
     DenzaTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Background) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 48.dp, vertical = 34.dp),
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(horizontal = 48.dp, vertical = 20.dp),
             ) {
-                Header(
-                    onTitleTap = {
-                        titleTaps += 1
-                        if (titleTaps >= 7) {
-                            titleTaps = 0
-                            showTechnical = true
-                            showSupport = true
-                        }
-                    },
-                    onSupport = { showSupport = true },
-                )
-                Spacer(Modifier.height(30.dp))
+                CompactToolbar(onSupport = { showSupport = true })
+                Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -121,24 +129,47 @@ fun DenzaAppsRoot(
                     FeatureCard(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Outlined.Apps,
-                        title = "Приложения",
-                        subtitle = "${uiState.selectedAppCount} выбрано",
+                        title = "Приложения на экранах",
+                        subtitle = selectedAppNames,
                         snapshot = uiState.simulcast,
                         switchValue = uiState.simulcast.desiredEnabled,
                         onSwitch = onToggleSimulcast,
                     ) {
-                        Button(
-                            onClick = onChooseApps,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Accent,
-                                contentColor = Color(0xFF06251C),
-                            ),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text("Выбрать приложения", fontWeight = FontWeight.SemiBold)
-                        }
-                        if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION) {
-                            Spacer(Modifier.width(10.dp))
-                            OutlinedButton(onClick = onRepairSimulcast) { Text("Исправить") }
+                            OutlinedButton(
+                                modifier = Modifier.weight(1f),
+                                onClick = onChooseApps,
+                            ) {
+                                Text("Выбрать", fontWeight = FontWeight.SemiBold)
+                            }
+                            Button(
+                                modifier = Modifier.weight(1f),
+                                onClick = if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
+                                    uiState.simulcast.desiredEnabled
+                                ) onRepairSimulcast else onLaunchSimulcast,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (uiState.simulcast.desiredEnabled) {
+                                        Accent
+                                    } else {
+                                        DisabledElevated
+                                    },
+                                    contentColor = if (uiState.simulcast.desiredEnabled) {
+                                        Color(0xFF06251C)
+                                    } else {
+                                        DisabledInk
+                                    },
+                                ),
+                            ) {
+                                Text(
+                                    if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
+                                        uiState.simulcast.desiredEnabled
+                                    ) "Исправить" else "Запустить",
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
                         }
                     }
                     FeatureCard(
@@ -151,28 +182,72 @@ fun DenzaAppsRoot(
                         onSwitch = onToggleMirrors,
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
                                 MirrorChoice(
+                                    modifier = Modifier.weight(1f),
                                     text = "По сторонам",
                                     selected = uiState.mirrorsPosition == MirrorsPosition.SIDES,
+                                    featureEnabled = uiState.mirrors.desiredEnabled,
                                     onClick = { onMirrorsPosition(MirrorsPosition.SIDES) },
                                 )
                                 MirrorChoice(
+                                    modifier = Modifier.weight(1f),
                                     text = "По центру",
                                     selected = uiState.mirrorsPosition == MirrorsPosition.CENTER,
+                                    featureEnabled = uiState.mirrors.desiredEnabled,
                                     onClick = { onMirrorsPosition(MirrorsPosition.CENTER) },
                                 )
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Обработка", color = Muted, fontSize = 14.sp)
-                                Spacer(Modifier.width(8.dp))
-                                Switch(
-                                    checked = uiState.mirrorsProcessing,
-                                    onCheckedChange = onMirrorsProcessing,
-                                )
-                                Spacer(Modifier.weight(1f))
-                                TextButton(onClick = onPreviewMirrors) { Text("Проверить") }
+                            Spacer(Modifier.height(10.dp))
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (uiState.mirrors.desiredEnabled) Elevated else DisabledElevated,
+                                shape = RoundedCornerShape(14.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text(
+                                            "Улучшение изображения",
+                                            color = if (uiState.mirrors.desiredEnabled) Ink else DisabledInk,
+                                            fontSize = 13.sp,
+                                        )
+                                        Text(
+                                            "Ярче и контрастнее",
+                                            color = if (uiState.mirrors.desiredEnabled) Muted else DisabledMuted,
+                                            fontSize = 11.sp,
+                                        )
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    Switch(
+                                        checked = uiState.mirrorsProcessing,
+                                        onCheckedChange = onMirrorsProcessing,
+                                        colors = if (uiState.mirrors.desiredEnabled) {
+                                            SwitchDefaults.colors()
+                                        } else {
+                                            SwitchDefaults.colors(
+                                                checkedThumbColor = DisabledInk,
+                                                checkedTrackColor = DisabledMuted,
+                                            )
+                                        },
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                OutlinedButton(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    onClick = onPreviewMirrors,
+                                ) {
+                                    Text("Проверить камеры", fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
@@ -184,6 +259,7 @@ fun DenzaAppsRoot(
                         snapshot = uiState.navigation,
                     ) {
                         Button(
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = onNavigationAction,
                             enabled = uiState.navigation.status != FeatureStatus.STARTING &&
                                 uiState.navigation.status != FeatureStatus.RECOVERING,
@@ -197,7 +273,17 @@ fun DenzaAppsRoot(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                Footer(uiState)
+                Footer(
+                    state = uiState,
+                    onTechnicalTap = {
+                        titleTaps += 1
+                        if (titleTaps >= 7) {
+                            titleTaps = 0
+                            showTechnical = true
+                            showSupport = true
+                        }
+                    },
+                )
             }
         }
     }
@@ -244,20 +330,38 @@ private fun AppPickerDialog(
             Column(modifier = Modifier.padding(28.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column {
-                        Text("Приложения", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Выбрано $selectedCount из 6", color = Muted, fontSize = 14.sp)
+                        Text(
+                            "Приложения на экранах",
+                            color = Ink,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text("Можно выбрать до 6 · выбрано $selectedCount", color = Muted, fontSize = 14.sp)
                     }
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = onDismiss) { Text("Готово") }
+                    TextButton(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.textButtonColors(contentColor = Accent),
+                    ) {
+                        Text("Готово")
+                    }
                 }
                 if (message.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(message, color = Warning, fontSize = 14.sp)
                 }
                 Spacer(Modifier.height(18.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(6),
+                    modifier = Modifier.fillMaxWidth().height(360.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     items(apps, key = { it.packageName }) { app ->
-                        AppChoiceTile(app = app, onClick = { onToggle(app.packageName) })
+                        AppChoiceTile(
+                            app = app,
+                            onClick = { onToggle(app.packageName) },
+                        )
                     }
                 }
             }
@@ -273,15 +377,15 @@ private fun AppChoiceTile(app: SimulcastAppChoice, onClick: () -> Unit) {
     }
     Card(
         modifier = Modifier
-            .width(146.dp)
-            .height(188.dp)
+            .fillMaxWidth()
+            .height(114.dp)
             .then(if (app.selected) Modifier.border(2.dp, Accent, shape) else Modifier)
             .clickable(onClick = onClick),
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = Elevated),
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(14.dp),
+            modifier = Modifier.fillMaxSize().padding(8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -289,17 +393,17 @@ private fun AppChoiceTile(app: SimulcastAppChoice, onClick: () -> Unit) {
                 Image(
                     painter = BitmapPainter(bitmap),
                     contentDescription = null,
-                    modifier = Modifier.size(92.dp),
+                    modifier = Modifier.size(54.dp),
                     contentScale = ContentScale.Fit,
                 )
             } else {
-                Icon(Icons.Outlined.Apps, null, modifier = Modifier.size(72.dp), tint = Muted)
+                Icon(Icons.Outlined.Apps, null, modifier = Modifier.size(50.dp), tint = Muted)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 app.label,
                 color = if (app.selected) Accent else Ink,
-                fontSize = 14.sp,
+                fontSize = 12.sp,
                 fontWeight = if (app.selected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 2,
             )
@@ -308,14 +412,24 @@ private fun AppChoiceTile(app: SimulcastAppChoice, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MirrorChoice(text: String, selected: Boolean, onClick: () -> Unit) {
+private fun MirrorChoice(
+    modifier: Modifier,
+    text: String,
+    selected: Boolean,
+    featureEnabled: Boolean,
+    onClick: () -> Unit,
+) {
     if (selected) {
         Button(
+            modifier = modifier,
             onClick = onClick,
-            colors = ButtonDefaults.buttonColors(containerColor = Elevated, contentColor = Accent),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (featureEnabled) Elevated else DisabledElevated,
+                contentColor = if (featureEnabled) Accent else DisabledInk,
+            ),
         ) { Text(text, fontSize = 12.sp) }
     } else {
-        OutlinedButton(onClick = onClick) { Text(text, fontSize = 12.sp) }
+        OutlinedButton(modifier = modifier, onClick = onClick) { Text(text, fontSize = 12.sp) }
     }
 }
 
@@ -335,21 +449,8 @@ private fun DenzaTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Header(onTitleTap: () -> Unit, onSupport: () -> Unit) {
+private fun CompactToolbar(onSupport: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .background(Accent, RoundedCornerShape(14.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(Modifier.size(13.dp).background(Color(0xFF06251C), CircleShape))
-        }
-        Spacer(Modifier.width(15.dp))
-        Column(modifier = Modifier.clickable(onClick = onTitleTap)) {
-            Text("Denza Apps", color = Ink, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
-            Text("Всё нужное для автомобиля", color = Muted, fontSize = 14.sp)
-        }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onSupport) {
             Icon(Icons.Outlined.Info, null, modifier = Modifier.size(20.dp))
@@ -370,18 +471,26 @@ private fun FeatureCard(
     onSwitch: ((Boolean) -> Unit)? = null,
     actions: @Composable () -> Unit,
 ) {
+    val featureEnabled = switchValue != false
     Card(
-        modifier = modifier.height(350.dp),
+        modifier = modifier.height(405.dp),
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+        colors = CardDefaults.cardColors(
+            containerColor = if (featureEnabled) SurfaceColor else DisabledSurface,
+        ),
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier.size(46.dp).background(Elevated, RoundedCornerShape(14.dp)),
+                    modifier = Modifier
+                        .size(46.dp)
+                        .background(
+                            if (featureEnabled) Elevated else DisabledElevated,
+                            RoundedCornerShape(14.dp),
+                        ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(icon, null, tint = Accent)
+                    Icon(icon, null, tint = if (featureEnabled) Accent else DisabledInk)
                 }
                 Spacer(Modifier.weight(1f))
                 if (switchValue != null && onSwitch != null) {
@@ -389,9 +498,18 @@ private fun FeatureCard(
                 }
             }
             Spacer(Modifier.height(24.dp))
-            Text(title, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                title,
+                color = if (featureEnabled) Ink else DisabledInk,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
             Spacer(Modifier.height(6.dp))
-            Text(subtitle, color = Muted, fontSize = 15.sp)
+            Text(
+                subtitle,
+                color = if (featureEnabled) Muted else DisabledMuted,
+                fontSize = 15.sp,
+            )
             Spacer(Modifier.height(26.dp))
             StatusLine(snapshot)
             if (snapshot.message.isNotBlank()) {
@@ -442,12 +560,13 @@ private fun StatusLine(snapshot: FeatureSnapshot) {
 }
 
 @Composable
-private fun Footer(state: DenzaUiState) {
+private fun Footer(state: DenzaUiState, onTechnicalTap: () -> Unit) {
     val ready = listOf(state.simulcast, state.mirrors, state.navigation).count { it.isWorking }
     Text(
         if (ready == 0) "Функции включаются независимо" else "$ready из 3 функций готовы",
         color = Muted,
         fontSize = 13.sp,
+        modifier = Modifier.clickable(onClick = onTechnicalTap),
     )
 }
 
@@ -458,33 +577,152 @@ private fun SupportDialog(
     onSelectClusterDisplay: (Int?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AlertDialog(
+    val uriHandler = LocalUriHandler.current
+    Dialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(if (showTechnical) Icons.Outlined.Build else Icons.Outlined.Info, null) },
-        title = { Text(if (showTechnical) "Диагностика" else "Denza Apps") },
-        text = {
-            Column {
-                Text(
-                    if (showTechnical) state.technicalDetails
-                    else "Приложение самостоятельно восстанавливает необходимые службы. Если функция просит действие, подтвердите ADB-ключ на экране автомобиля и нажмите «Исправить».",
-                    fontFamily = if (showTechnical) FontFamily.Monospace else FontFamily.Default,
-                )
-                if (showTechnical) {
-                    Spacer(Modifier.height(16.dp))
-                    Text("Instrument display", fontWeight = FontWeight.SemiBold)
-                    state.clusterCandidates
-                        .filter { it.id != 0 && !it.isOwnVirtualDisplay }
-                        .forEach { display ->
-                            TextButton(onClick = { onSelectClusterDisplay(display.id) }) {
-                                Text("#${display.id} · ${display.name} · ${display.width}×${display.height}")
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.72f),
+            color = SurfaceColor,
+            shape = RoundedCornerShape(26.dp),
+        ) {
+            Column(modifier = Modifier.padding(28.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (showTechnical) Icons.Outlined.Build else Icons.Outlined.Info,
+                        null,
+                        tint = Accent,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        if (showTechnical) "Диагностика" else "Помощь",
+                        color = Ink,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Spacer(Modifier.height(22.dp))
+                if (!showTechnical) {
+                    HelpSection(
+                        title = "Приложения на экранах",
+                        text = "Выберите до 6 приложений и нажмите «Запустить». Они появятся в меню Simulcast/DiShare.",
+                    )
+                    HelpSection(
+                        title = "Зеркала",
+                        text = "Выберите расположение камер. «Проверить камеры» покажет тестовую раскладку на приборке, тумблер сверху включит камеры поворотников.",
+                    )
+                    HelpSection(
+                        title = "Навигация",
+                        text = "Сначала откройте Яндекс Навигатор, затем нажмите «На приборку».",
+                    )
+                    Text(
+                        "Если карточка просит действие, подтвердите ADB-ключ на экране автомобиля и нажмите «Исправить».",
+                        color = Muted,
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 430.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        state.technicalDetails
+                            .lineSequence()
+                            .filter { it.isNotBlank() }
+                            .forEach { line ->
+                                DiagnosticRow(
+                                    label = line.substringBefore('='),
+                                    value = line.substringAfter('=', missingDelimiterValue = "—"),
+                                )
                             }
+                        Spacer(Modifier.height(8.dp))
+                        Text("Выбор экрана приборки", color = Ink, fontWeight = FontWeight.SemiBold)
+                        state.clusterCandidates
+                            .filter { it.id != 0 && !it.isOwnVirtualDisplay }
+                            .forEach { display ->
+                                OutlinedButton(
+                                    onClick = { onSelectClusterDisplay(display.id) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    border = BorderStroke(1.dp, Elevated),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
+                                ) {
+                                    Text("#${display.id} · ${display.width}×${display.height} · ${display.name}")
+                                }
+                            }
+                        TextButton(
+                            onClick = { onSelectClusterDisplay(null) },
+                            modifier = Modifier.align(Alignment.End),
+                        ) {
+                            Text("Определять автоматически", color = Accent)
                         }
-                    TextButton(onClick = { onSelectClusterDisplay(null) }) {
-                        Text("Use automatic detection")
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (!showTechnical) {
+                        OutlinedButton(
+                            onClick = { uriHandler.openUri("https://github.com/xor777/denza-lab") },
+                            border = BorderStroke(1.dp, Accent),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
+                        ) {
+                            Text("Открыть GitHub")
+                        }
+                        Spacer(Modifier.width(10.dp))
+                    }
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color(0xFF06251C),
+                        ),
+                    ) {
+                        Text("Закрыть", fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },
-    )
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(label: String, value: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Elevated,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label,
+                color = Muted,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(0.42f),
+            )
+            Text(
+                value,
+                color = Ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(0.58f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun HelpSection(title: String, text: String) {
+    Text(title, color = Ink, fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(4.dp))
+    Text(text, color = Muted)
+    Spacer(Modifier.height(14.dp))
 }
