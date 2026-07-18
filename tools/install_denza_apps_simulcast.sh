@@ -16,7 +16,7 @@ if [[ "$state" != "device" ]]; then
   exit 2
 fi
 
-apps_apk="$repo_root/denza-apps/build/outputs/apk/debug/denza-apps.apk"
+apps_apk="$repo_root/apps/denza-apps/build/outputs/apk/debug/denza-apps.apk"
 if [[ ! -f "$apps_apk" ]]; then
   echo "Missing $apps_apk. Build with ./gradlew :denza-apps:assembleDebug first." >&2
   exit 3

@@ -26,11 +26,11 @@ product code, remote-access infrastructure, and reverse-engineering experiments.
 
 | Lifecycle | Component | Purpose |
 | --- | --- | --- |
-| **Active** | [`car-adb-gateway/`](car-adb-gateway/) | Generic, relay-only remote ADB gateway with one trusted computer and a self-healing Android service. |
-| **Active** | [`denza-apps/`](denza-apps/) | The single Denza feature app. Simulcast is available today; Denza Mirrors functionality will move here. |
-| **Transition** | [`denza-mirrors/`](denza-mirrors/) | Existing side-camera app and the source for the ongoing camera-feature migration into Denza Apps. No new standalone product direction. |
-| **Legacy** | [`denza-gateway/`](denza-gateway/) | Original LAN-only SSH-to-ADB gateway. Kept for maintenance and reference; superseded for new remote-access work. |
-| **Library** | [`dishare-bridge/`](dishare-bridge/) | Shared raw DiShare binder integration used by Denza Apps. |
+| **Active** | [`apps/car-adb-gateway/`](apps/car-adb-gateway/) | Generic, relay-only remote ADB gateway with one trusted computer and a self-healing Android service. |
+| **Active** | [`apps/denza-apps/`](apps/denza-apps/) | The single Denza feature app. Simulcast is available today; Denza Mirrors functionality will move here. |
+| **Transition** | [`apps/denza-mirrors/`](apps/denza-mirrors/) | Existing side-camera app and the source for the ongoing camera-feature migration into Denza Apps. No new standalone product direction. |
+| **Legacy** | [`legacy/denza-gateway/`](legacy/denza-gateway/) | Original LAN-only SSH-to-ADB gateway. Kept for maintenance and reference; superseded for new remote-access work. |
+| **Library** | [`libraries/dishare-bridge/`](libraries/dishare-bridge/) | Shared raw DiShare binder integration used by Denza Apps. |
 | **Platform** | [`cli/`](cli/), [`relay/`](relay/), [`ops/ansible/`](ops/ansible/) | Developer CLI, restricted relay control plane, and reproducible server provisioning. |
 
 Supporting areas have deliberately narrow roles:
@@ -62,37 +62,35 @@ end-to-end encrypted to the Android app. See the
 [architecture](docs/CLOUD-ARCHITECTURE.md) and
 [decision log](docs/CAR-ADB-GATEWAY-DECISIONS.md) for the security model.
 
-## Repository direction
+## Repository layout
 
 The repository is becoming **Denza Lab**: the umbrella name describes the work
 better than the historical `denza-gateway` name.
 
-The cleanup is intentionally staged:
+The product cleanup is intentionally staged:
 
-1. Use Denza Lab as the repository identity and make component lifecycle explicit.
+1. Keep active and transition apps under `apps/`, shared code under
+   `libraries/`, and frozen products under `legacy/`.
 2. Move the supported Denza Mirrors behavior into Denza Apps.
-3. Remove retired apps from the default Gradle build once their replacement is
+3. Remove Denza Mirrors from the default Gradle build once its replacement is
    verified on a real head unit.
-4. Only then group active Android modules under `apps/`, shared code under
-   `libraries/`, and frozen code under `legacy/`.
+4. Move the frozen Denza Mirrors source from `apps/` to `legacy/`.
 
-Keeping Gradle modules at the repository root during the migration avoids a
-large path-only diff and keeps current build commands stable. The intended final
-shape is:
+Gradle module names remain stable even though their source directories are
+grouped by role. During the migration, the repository shape is:
 
 ```text
 apps/
   car-adb-gateway/
   denza-apps/
+  denza-mirrors/       # transition
 libraries/
   dishare-bridge/
-platform/
-  cli/
-  relay/
+cli/                   # moved to platform/ in the next mechanical step
+relay/                 # moved to platform/ in the next mechanical step
 ops/
 legacy/
   denza-gateway/
-  denza-mirrors/
 docs/  research/  tools/
 ```
 

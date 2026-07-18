@@ -29,11 +29,11 @@ for historical reasons. The repository identity is **Denza Lab**.
 
 | Gradle | Path | App id / namespace |
 | --- | --- | --- |
-| `:denza-gateway` | `denza-gateway/` | `dev.denza.gateway` (legacy/maintenance-only) |
-| `:denza-mirrors` | `denza-mirrors/` | `dev.denza.mirrors` (transition) + `dev.denza.mirrors.probe` (research) |
-| `:denza-apps` | `denza-apps/` | `dev.denza.apps` (active consolidation app), depends on `:dishare-bridge` |
-| `:dishare-bridge` | `dishare-bridge/` | `dev.denza.disharebridge` (library) |
-| `:car-adb-gateway` | `car-adb-gateway/` | `ru.adbgw.gateway` (active product candidate) |
+| `:denza-gateway` | `legacy/denza-gateway/` | `dev.denza.gateway` (legacy/maintenance-only) |
+| `:denza-mirrors` | `apps/denza-mirrors/` | `dev.denza.mirrors` (transition) + `dev.denza.mirrors.probe` (research) |
+| `:denza-apps` | `apps/denza-apps/` | `dev.denza.apps` (active consolidation app), depends on `:dishare-bridge` |
+| `:dishare-bridge` | `libraries/dishare-bridge/` | `dev.denza.disharebridge` (library) |
+| `:car-adb-gateway` | `apps/car-adb-gateway/` | `ru.adbgw.gateway` (active product candidate) |
 
 ## Build
 

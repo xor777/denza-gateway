@@ -121,7 +121,8 @@ Retries after a lost enrollment, pair-submission, or commit response are safe.
 
 ## 4. Android Application
 
-Gradle module: `car-adb-gateway/`; application ID: `ru.adbgw.gateway`; minSdk 26.
+Gradle module: `apps/car-adb-gateway/`; application ID: `ru.adbgw.gateway`;
+minSdk 26.
 ADB, device, and inner host keys live in app-private storage, and Android backup
 is disabled ([CAG-010](CAR-ADB-GATEWAY-DECISIONS.md#cag-010)).
 

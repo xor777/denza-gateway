@@ -22,10 +22,11 @@ It is not compiled into `denza-mirrors.apk`.
 Copy `VehicleEventProbeService.java` back into:
 
 ```text
-denza-mirrors/src/main/java/dev/denza/mirrors/probe/VehicleEventProbeService.java
+apps/denza-mirrors/src/main/java/dev/denza/mirrors/probe/VehicleEventProbeService.java
 ```
 
-Then add the service and experimental permissions back to `denza-mirrors/src/main/AndroidManifest.xml`.
+Then add the service and experimental permissions back to
+`apps/denza-mirrors/src/main/AndroidManifest.xml`.
 
 The probe action names were:
 
