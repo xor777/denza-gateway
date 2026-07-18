@@ -1,8 +1,8 @@
-# Server Ansible
+# Relay Server Ansible
 
-Ansible-конфигурация VPS для Car ADB Gateway.
+Ansible configuration for the Car ADB Gateway VPS.
 
-## Локальная установка
+## Local Setup
 
 ```bash
 cd ops/ansible
@@ -11,26 +11,28 @@ python3 -m venv .venv-ansible
 .venv-ansible/bin/ansible-galaxy collection install -r requirements.yml
 ```
 
-## Настройка сервера
+## Configure the Server
 
 ```bash
 .venv-ansible/bin/ansible-playbook playbooks/relay-host.yml
 .venv-ansible/bin/ansible-playbook playbooks/verify-relay-host.yml
 ```
 
-Повторный запуск безопасен и приводит сервер к конфигурации из репозитория.
+Repeated runs are safe and converge the server to the configuration in this
+repository.
 
-После конфигурации создайте одноразовый invite-код (по умолчанию на 60 минут):
+After configuration, create a single-use invite code. Its default lifetime is
+60 minutes:
 
 ```bash
 ssh adbgw.ru sudo cag-admin invite
 ```
 
-Состояние enrollment, pairing и grant хранится атомарно в
-`/opt/cag/state/state.json` под общей блокировкой. Коды ограничены по времени,
-а пять неверных попыток с одного адреса включают пятиминутную паузу.
+Enrollment, pairing, and grant state is stored atomically in
+`/opt/cag/state/state.json` under a shared lock. Codes are time-limited, and five
+invalid attempts from one source trigger a five-minute lockout.
 
-## Развёртывание нового VPS
+## Provision a New VPS
 
 ```bash
 .venv-ansible/bin/ansible-playbook -u root --ask-pass playbooks/bootstrap.yml
@@ -40,7 +42,7 @@ ssh dmitry@95.179.132.238 'sudo -n true'
   playbooks/lockdown.yml
 ```
 
-Если после обновлений требуется перезагрузка:
+If package updates require a reboot:
 
 ```bash
 .venv-ansible/bin/ansible-playbook -u root --ask-pass \
@@ -48,7 +50,7 @@ ssh dmitry@95.179.132.238 'sudo -n true'
   playbooks/reboot.yml
 ```
 
-Пароли и приватные ключи нельзя хранить в inventory или переменных Ansible.
+Never store passwords or private keys in inventory or Ansible variables.
 
 ## DNS
 
@@ -56,6 +58,6 @@ ssh dmitry@95.179.132.238 'sudo -n true'
 A  @  95.179.132.238
 ```
 
-Запись `AAAA` пока не нужна. Порт 443 используется для SSH, а не HTTPS.
-Проверочный playbook требует, чтобы домен указывал на этот IPv4 и fingerprint
-Ed25519 host key совпадал с закреплённым значением.
+An `AAAA` record is not required yet. Port 443 carries SSH, not HTTPS. The
+verification playbook requires the domain to resolve to this IPv4 address and
+the Ed25519 host-key fingerprint to match the pinned value.

@@ -1,224 +1,228 @@
-# Car ADB Gateway — relay-only архитектура v3
+# Car ADB Gateway — Relay-Only Architecture v3
 
-Статус: нормативное описание реализации в этом репозитории. Обновлено
-2026-07-18. Эта версия relay ещё не развёрнута; живые E2E- и soak-проверки
-остаются обязательными перед production.
+Status: normative description of the implementation in this repository. Updated
+2026-07-18. This relay version has not been deployed yet; live end-to-end and
+soak verification remain mandatory before production use.
 
-Car ADB Gateway — отдельное универсальное Android-приложение для автомобильных
-ГУ, где ADB доступен локально. Оно устанавливается рядом с существующим LAN-only
-Denza Gateway и не зависит от марки автомобиля.
+Car ADB Gateway is a standalone, vehicle-agnostic Android app for head units
+where ADB is available locally. It can be installed alongside the existing
+LAN-only Denza Gateway and does not depend on the vehicle brand.
 
-В v3 нет LAN-листенера, LAN-сценария и настройки собственного relay
+Version 3 has no LAN listener, LAN workflow, or configurable self-hosted relay
 ([CAG-001](CAR-ADB-GATEWAY-DECISIONS.md#cag-001),
 [CAG-002](CAR-ADB-GATEWAY-DECISIONS.md#cag-002),
-[CAG-003](CAR-ADB-GATEWAY-DECISIONS.md#cag-003)). Обоснования и история
-пересмотра находятся в [журнале решений](CAR-ADB-GATEWAY-DECISIONS.md); этот
-документ задаёт текущее поведение.
+[CAG-003](CAR-ADB-GATEWAY-DECISIONS.md#cag-003)). The
+[decision log](CAR-ADB-GATEWAY-DECISIONS.md) records rationale and revision
+history; this document defines current behavior.
 
-## 1. Роли и выдача доступа
+## 1. Roles and Access Grants
 
-Публичная доступность TCP-порта 443 сама по себе не даёт ни одной роли доступ к
-автомобилю.
+Public reachability of TCP port 443 does not grant any role access to a vehicle.
 
-| Роль | Как получает полномочие | Что может делать |
+| Role | How authority is obtained | Allowed actions |
 | --- | --- | --- |
-| Автомобиль | Администратор relay создаёт enrollment-код на 60 минут. APK создаёт device-key и один раз использует код. | Публиковать только свой loopback-порт; создавать pairing-код; подтверждать замену или отключать свой grant. |
-| Администратор relay | Обычный административный SSH-ключ, порт 22. | Развернуть/проверить host, создать приглашение автомобилю, проверить или отозвать серверное состояние. Для каждого разработчика не нужен. |
-| Разработчик | Человек у экрана зарегистрированного автомобиля подтверждает предупреждение и показывает pairing-код на 10 минут. `cag pair CODE` регистрирует public key этого компьютера для этой машины. | Открыть только назначенный порт этой машины и пройти end-to-end аутентификацию на ней. Shell relay и другие машины недоступны. |
+| Vehicle | A relay administrator creates a 60-minute enrollment code. The APK creates a device key and consumes the code once. | Publish only its assigned loopback port, create a pairing code, confirm replacement, or disable its own grant. |
+| Relay administrator | A regular administrative SSH key on port 22. | Deploy and verify the host, create a vehicle invite, and inspect or revoke server-side state. The administrator is not involved for each developer. |
+| Developer | A person at an enrolled vehicle accepts a warning and displays a ten-minute pairing code. `cag pair CODE` registers that computer's public key for the vehicle. | Open only the assigned port for that vehicle and complete end-to-end authentication to it. Relay shell access and other vehicles are unavailable. |
 
-APK без enrollment-кода не может зарегистрироваться на relay. Pairing-код с
-экрана уже зарегистрированной машины не подходит для регистрации нового авто.
+An APK without an enrollment code cannot register with the relay. A pairing code
+displayed by an already enrolled vehicle cannot enroll another vehicle.
 
-## 2. Топология и границы доверия
+## 2. Topology and Trust Boundaries
 
 ```text
-Android ГУ                              relay: adbgw.ru                 компьютер разработчика
+Android head unit                         relay: adbgw.ru                 developer computer
 
 ADB 5037/5555 <- sshd 127.0.0.1:2222 <- SSH -R -> 127.0.0.1:device-port <- SSH -W -> cag CLI
-                  end-to-end SSH             OpenSSH/PAM, порт 443       macOS или Linux
+                    end-to-end SSH              OpenSSH/PAM, port 443       macOS or Linux
 ```
 
-- Автомобиль всегда инициирует соединение наружу.
-- Единственный Android-листенер — `127.0.0.1:2222`; Wi‑Fi, cellular и wildcard
-  интерфейсы не слушаются.
-- Порты машин на VPS также доступны только через loopback relay.
-- `adbgw.ru:443` и Ed25519 fingerprint зашиты в Android и CLI. Mismatch —
-  постоянная безопасная ошибка, а не повод бесконечно повторять подключение
-  ([CAG-003](CAR-ADB-GATEWAY-DECISIONS.md#cag-003)).
-- Relay видит outer identity и соответствие ключа порту. Внутренний SSH между
-  компьютером и машиной зашифрован end-to-end.
-- Во время первого one-code bootstrap фиксированный relay считается доверенным
-  источником inner host key; затем CLI пинит этот ключ
+- The vehicle always initiates the outbound connection.
+- The only Android listener is `127.0.0.1:2222`; Wi-Fi, cellular, and wildcard
+  interfaces are never bound.
+- Vehicle ports on the VPS are also reachable only through relay loopback.
+- `adbgw.ru:443` and its Ed25519 fingerprint are embedded in Android and the
+  CLI. A mismatch is a permanent, fail-closed error, not a reason to retry
+  forever ([CAG-003](CAR-ADB-GATEWAY-DECISIONS.md#cag-003)).
+- The relay sees outer identities and key-to-port assignments. Inner SSH between
+  the computer and the vehicle remains end-to-end encrypted.
+- During the first one-code bootstrap, the fixed relay is trusted as the source
+  of the inner host key. The CLI pins that key afterward
   ([CAG-006](CAR-ADB-GATEWAY-DECISIONS.md#cag-006)).
 
 ## 3. Relay
 
-`ops/ansible` настраивает stock OpenSSH и команды из `relay/`. Порт 22 остаётся
-административным; порт 443 обслуживает приложение.
+`ops/ansible` configures stock OpenSSH and the commands in `relay/`. Port 22
+remains the administrative endpoint; port 443 serves the application.
 
-### 3.1 Ограниченные аккаунты
+### 3.1 Restricted Accounts
 
-| Аккаунт | Аутентификация | Ограничение |
+| Account | Authentication | Restriction |
 | --- | --- | --- |
-| `cag-device` | Отдельный public key машины | Только remote forwarding и `permitlisten=127.0.0.1:<assigned-port>`; команд нет. |
-| `cag-client` | Активный или pending public key разработчика | Только local forwarding и `permitopen=127.0.0.1:<assigned-port>`; команд нет. |
-| `cag-enroll` | Временный admin invite через PAM | Forwarding запрещён; только forced enrollment command. |
-| `cag-pair` | Pairing-код машины через PAM | Forwarding запрещён; только forced staging command. |
-| `cag-control` | Public key машины | Forwarding запрещён; per-key forced command ограничен device ID. |
-| `cag-authkeys` | SSH login отсутствует | Читает state для `AuthorizedKeysCommand`. |
+| `cag-device` | A dedicated vehicle public key | Remote forwarding only, with `permitlisten=127.0.0.1:<assigned-port>`; no commands. |
+| `cag-client` | The active or pending developer public key | Local forwarding only, with `permitopen=127.0.0.1:<assigned-port>`; no commands. |
+| `cag-enroll` | A temporary administrator invite through PAM | Forwarding disabled; forced enrollment command only. |
+| `cag-pair` | A vehicle pairing code through PAM | Forwarding disabled; forced staging command only. |
+| `cag-control` | A vehicle public key | Forwarding disabled; the per-key forced command is restricted to its device ID. |
+| `cag-authkeys` | No SSH login | Reads state for `AuthorizedKeysCommand`. |
 
-TTY, shell, X11, agent forwarding, tunnel device, user RC и Unix socket
-forwarding запрещены. Control-key остаётся зарегистрированным при выключенном
-доступе, чтобы пользователь мог вручную включить его снова; этот ключ не умеет
-форвардить трафик.
+TTY, shell, X11, agent forwarding, tunnel devices, user RC files, and Unix
+socket forwarding are disabled. The control key stays registered while access
+is disabled so the user can enable it manually again; that key cannot forward
+traffic.
 
-### 3.2 State, коды и rate limit
+### 3.2 State, Codes, and Rate Limiting
 
-`/opt/cag/state/state.json` — единственный изменяемый state. Каждая операция,
-способная удалить просроченную запись или изменить данные, держит
-`/opt/cag/state/locks/state.lock` через `flock`; запись использует fsync и
-атомарный rename.
+`/opt/cag/state/state.json` is the only mutable state file. Every operation that
+can delete an expired record or change data holds
+`/opt/cag/state/locks/state.lock` through `flock`; writes use fsync and an atomic
+rename.
 
-State содержит машины, public keys клиентов, активные grants, pending-замены,
-коды и per-source rate limit. `AuthorizedKeysCommand` динамически строит из него
-строки с ограничениями.
+State includes vehicles, client public keys, active grants, pending
+replacements, codes, and per-source rate limits. `AuthorizedKeysCommand`
+dynamically renders restricted key entries from it.
 
-- Enrollment: `XXXX-XXXX`, TTL по умолчанию 60 минут, одна машина. Повтор тем же
-  device-key после потерянного ответа идемпотентен; другой device-key отклоняется.
-- Pairing: `XXXX-XXXX`, TTL 10 минут. После пяти неверных SSH-паролей источник
-  блокируется на пять минут.
-- Алфавит исключает `0/O` и `1/I`.
-- Просроченный pending удаляется без изменения активного grant.
+- Enrollment code: `XXXX-XXXX`, default TTL 60 minutes, one vehicle. A retry
+  with the same device key after a lost response is idempotent; a different
+  device key is rejected.
+- Pairing code: `XXXX-XXXX`, TTL 10 minutes. Five invalid SSH password attempts
+  from one source trigger a five-minute lockout.
+- The code alphabet excludes `0/O` and `1/I`.
+- Expired pending state is removed without changing the active grant.
 
-Администратор создаёт первое приглашение так:
+An administrator creates the initial invite with:
 
 ```bash
 sudo cag-admin invite
 ```
 
-### 3.3 Двухфазная замена компьютера
+### 3.3 Two-Phase Computer Replacement
 
-У машины один trusted computer и одна активная inner SSH-сессия
-([CAG-004](CAR-ADB-GATEWAY-DECISIONS.md#cag-004)). Замена не ломает старый доступ
-до подтверждения нового ([CAG-005](CAR-ADB-GATEWAY-DECISIONS.md#cag-005)):
+A vehicle has one trusted computer and one active inner SSH session
+([CAG-004](CAR-ADB-GATEWAY-DECISIONS.md#cag-004)). Replacement preserves the old
+access until the new computer is confirmed
+([CAG-005](CAR-ADB-GATEWAY-DECISIONS.md#cag-005)):
 
-1. Авторизованный автомобиль создаёт pairing request и показывает код.
-2. `cag pair CODE` отправляет новый public key. Relay сохраняет его как pending и
-   временно пропускает active и pending keys только к порту этой машины.
-3. CLI начинает end-to-end SSH к автомобилю, предлагает public key, затем тот же
-   код.
-4. Автомобиль проверяет код и ключ и выполняет авторизованный идемпотентный
-   `pair-commit <fingerprint>`.
-5. Relay атомарно заменяет активный grant.
-6. Автомобиль сохраняет новый trusted key и закрывает все предыдущие inner
-   сессии. Существующий старый outer-forward больше не пройдёт inner auth.
+1. The authorized vehicle creates a pairing request and displays the code.
+2. `cag pair CODE` submits the new public key. The relay stores it as pending
+   and temporarily allows both active and pending keys to reach only that
+   vehicle's port.
+3. The CLI starts end-to-end SSH to the vehicle and presents the public key,
+   then the same code.
+4. The vehicle verifies the code and key, then runs the authorized, idempotent
+   `pair-commit <fingerprint>` command.
+5. The relay atomically replaces the active grant.
+6. The vehicle stores the new trusted key and closes all previous inner
+   sessions. Any surviving old outer forward can no longer pass inner
+   authentication.
 
-Ошибка или expiry до commit оставляет старые grant и сессию. Повтор enrollment,
-pair submission или commit после потерянного ответа безопасен.
+Failure or expiry before commit leaves the old grant and session unchanged.
+Retries after a lost enrollment, pair-submission, or commit response are safe.
 
-## 4. Android-приложение
+## 4. Android Application
 
-Gradle-модуль: `car-adb-gateway/`; application ID: `ru.adbgw.gateway`; minSdk 26.
-ADB-, device- и inner host keys хранятся в app-private storage, backup приложения
-отключён ([CAG-010](CAR-ADB-GATEWAY-DECISIONS.md#cag-010)).
+Gradle module: `car-adb-gateway/`; application ID: `ru.adbgw.gateway`; minSdk 26.
+ADB, device, and inner host keys live in app-private storage, and Android backup
+is disabled ([CAG-010](CAR-ADB-GATEWAY-DECISIONS.md#cag-010)).
 
-### 4.1 Первая настройка
+### 4.1 First-Time Setup
 
-1. Приложение создаёт собственный ADB RSA key при попытке выполнить локальный
-   shell.
-2. Если raw adbd требует авторизацию, Android показывает штатный системный
-   диалог. Пользователь подтверждает его и нажимает «Проверить снова»
+1. The app creates its own ADB RSA key when it first attempts a local shell.
+2. If raw adbd requires authorization, Android shows the standard system
+   dialog. The user approves it and taps the retry action
    ([CAG-007](CAR-ADB-GATEWAY-DECISIONS.md#cag-007)).
-3. Приложение проверяет shell и best-effort применяет доступные device-idle и
-   background app-op настройки через уже авторизованный локальный ADB.
-4. Пользователь вводит восьмисимвольный enrollment-код администратора.
-5. Перед enrollment появляется предупреждение о полном удалённом доступе.
-6. APK регистрирует device/host public keys, сохраняет device ID и порт и
-   автоматически включает relay-only доступ.
+3. The app verifies shell access and makes a best-effort attempt to apply
+   available device-idle and background app-op settings through the authorized
+   local ADB connection.
+4. The user enters the administrator's eight-character enrollment code.
+5. A full-remote-access warning appears before enrollment.
+6. The APK registers the device and host public keys, stores the device ID and
+   port, and enables relay-only access automatically.
 
-### 4.2 ADB endpoint
+### 4.2 ADB Endpoint
 
-Порядок обнаружения: smart socket `5037`, затем raw adbd `5555`; сначала
-loopback, затем каждый собственный IPv4 ГУ. Тип и фактический host отправляются
-на relay и входят в pairing bundle. Inner SSH разрешает forwarding только к
-точно обнаруженным host и port.
+Detection order is smart socket `5037`, then raw adbd `5555`; loopback is tested
+first, followed by every local non-loopback IPv4 address on the head unit. The
+endpoint type and actual host are sent to the relay and included in the pairing
+bundle. Inner SSH allows forwarding only to the exact detected host and port.
 
-При raw `5555` стандартный ADB key компьютера может вызвать ещё один штатный
-Android-диалог. Это ожидаемое поведение.
+With raw port `5555`, the computer's standard ADB key can trigger a second
+Android authorization dialog. This is expected.
 
-### 4.3 Состояние и видимая активность
+### 4.3 State and Visible Activity
 
-Onboarding, ADB, relay, client, enabled-state, pairing и permanent failure —
-разные измерения state machine. Главный экран переводит их в простые статусы и
-не разбирает/не записывает ADB-команды
+Onboarding, ADB, relay, client, enabled state, pairing, and permanent failure are
+independent state-machine dimensions. The main screen translates them into
+simple statuses and never parses or records ADB commands
 ([CAG-008](CAR-ADB-GATEWAY-DECISIONS.md#cag-008)).
 
-Активность строится по надёжным SSH-событиям:
+Activity is based on reliable SSH events:
 
-- ожидание компьютера;
-- компьютер подключён и длительность сессии;
-- «удалённый компьютер работает» с пульсацией, пока открыт хотя бы один ADB
-  forwarding channel;
-- компьютер подключён, но ожидает;
-- время последней активности.
+- waiting for a computer;
+- computer connected, with session duration;
+- remote computer active, with a pulse while at least one ADB forwarding
+  channel is open;
+- computer connected but idle;
+- time of last activity.
 
-Endpoint, relay state, device ID и ограниченный in-memory журнал скрыты в
-«Поддержке».
+Endpoint details, relay state, device ID, and a bounded in-memory log are hidden
+under Support.
 
-### 4.4 Фоновая работа и восстановление
+### 4.4 Background Operation and Recovery
 
-Foreground service использует `specialUse`, `START_STICKY`, boot/package-update
-receivers и default network callback. `dataSync` и постоянный WakeLock не
-используются ([CAG-011](CAR-ADB-GATEWAY-DECISIONS.md#cag-011)).
+The foreground service uses `specialUse`, `START_STICKY`, boot and package-update
+receivers, and a default network callback. It does not use `dataSync` or a
+permanent WakeLock ([CAG-011](CAR-ADB-GATEWAY-DECISIONS.md#cag-011)).
 
-ADB/inner SSH и relay tunnel контролируются независимо:
+ADB/inner SSH and the relay tunnel are supervised independently:
 
-- ADB проверяется каждые 30 секунд, включая restart adbd и смену endpoint.
-  Авторизация перепроверяется, а фоновые app-ops не меняются повторно при
-  стабильном endpoint.
-- Relay reconnect использует jittered exponential backoff 1–60 секунд. Каждая
-  попытка подключается по hostname и заново проходит DNS resolution.
-- Смена сети закрывает старый tunnel и сразу сбрасывает backoff.
-- SSH heartbeat — 30 секунд, максимум три ответа могут быть пропущены.
-- Watchdog восстанавливает отсутствующий loopback server, не перезапуская
-  здоровые компоненты.
-- DNS, отсутствие сети, restart relay, sleep/wake и временная потеря ADB —
-  восстанавливаемые ошибки. Host-key mismatch, отозванный device-key и
-  повреждённые ключи останавливают auto-retry в безопасном видимом состоянии.
+- ADB is checked every 30 seconds, including adbd restarts and endpoint changes.
+  Authorization is rechecked, while background app-ops are not rewritten for a
+  stable endpoint.
+- Relay reconnect uses jittered exponential backoff from 1 to 60 seconds. Each
+  attempt connects by hostname and performs DNS resolution again.
+- A network change closes the old tunnel and immediately resets backoff.
+- SSH heartbeat interval is 30 seconds, with at most three missed replies.
+- The watchdog restores a missing loopback server without restarting healthy
+  components.
+- DNS failures, no network, relay restart, sleep/wake, and temporary ADB loss
+  are recoverable. Host-key mismatch, a revoked device key, and corrupt keys
+  stop automatic retry in a visible fail-closed state.
 
-Force Stop — системная граница Android: обычный APK не может запустить себя после
-него до ручного открытия ([CAG-012](CAR-ADB-GATEWAY-DECISIONS.md#cag-012)).
+Force Stop is an Android platform boundary: an ordinary APK cannot restart
+itself afterward until it is opened manually
+([CAG-012](CAR-ADB-GATEWAY-DECISIONS.md#cag-012)).
 
-### 4.5 Ручное отключение
+### 4.5 Manual Disconnect
 
-«Отключить удалённый доступ» закрывает inner sessions и tunnel, сохраняет
-`enabled=false` и best-effort выключает forwarding на relay. После reboot сервис
-не стартует. Обратное включение — только явное действие пользователя и требует
-успешного короткого control-соединения
+The disconnect action closes inner sessions and the tunnel, persists
+`enabled=false`, and makes a best-effort request to disable forwarding on the
+relay. The service does not start after reboot. Re-enabling requires an explicit
+user action and a successful short control connection
 ([CAG-009](CAR-ADB-GATEWAY-DECISIONS.md#cag-009)).
 
-## 5. Интерфейс
+## 5. User Interface
 
-Приложение landscape-first для экрана 15–16″. Основной экран содержит большую
-status-карточку, имя автомобиля, живую активность, одно действие
-«Подключить/Заменить компьютер» и «Отключить удалённый доступ». SSH, PAM,
-forwarding, smart socket и fingerprints отсутствуют вне поддержки.
+The app is landscape-first for a 15–16 inch display. The main screen has a large
+status card, vehicle name, live activity, one connect-or-replace-computer action,
+and one disconnect-remote-access action. SSH, PAM, forwarding, smart sockets,
+and fingerprints appear only under Support.
 
-Два отдельных предупреждения о полном доступе
-([CAG-013](CAR-ADB-GATEWAY-DECISIONS.md#cag-013)) показываются:
+Two separate full-access warnings
+([CAG-013](CAR-ADB-GATEWAY-DECISIONS.md#cag-013)) appear:
 
-1. перед первым enrollment автомобиля;
-2. перед каждым показом pairing-кода разработчику.
+1. before first vehicle enrollment;
+2. before every developer pairing code is displayed.
 
-Pairing-экран говорит, что код можно передавать только доверенному человеку, и
-показывает `cag pair XXXX-XXXX`. Списка компьютеров нет: пользователь мыслит
-одним текущим компьютером и его заменой.
+The pairing screen says that the code must be shared only with a trusted person
+and shows `cag pair XXXX-XXXX`. There is no computer list: the user works with
+one current computer and an explicit replacement action.
 
-## 6. CLI разработчика
+## 6. Developer CLI
 
-`cli/` собирает один Go-бинарник для macOS и Linux и не меняет
-`~/.ssh/config`. Runtime-зависимости: системный OpenSSH и Android Platform Tools
-при выполнении ADB-команды.
+`cli/` builds one Go binary for macOS and Linux and does not modify
+`~/.ssh/config`. Runtime dependencies are system OpenSSH and Android Platform
+Tools when an ADB command is executed.
 
 ```text
 cag pair <CODE>
@@ -228,46 +232,53 @@ cag status
 cag disconnect
 ```
 
-State лежит в системной user config directory: `~/.config/cag` в Linux/XDG и
-`~/Library/Application Support/cag` в macOS. Там находятся client key, fixed
-relay host key, pinned vehicle host key, active bundle и SSH control socket.
+State lives in the platform user configuration directory: `~/.config/cag` on
+Linux/XDG and `~/Library/Application Support/cag` on macOS. It contains the
+client key, fixed relay host key, pinned vehicle host key, active bundle, and
+SSH control socket.
 
-`cag connect` оставляет ControlMaster tunnel в фоне с keepalive 30 секунд. Для
-smart socket используется `ADB_SERVER_SOCKET`; для raw adbd — свободный local
-port и `adb connect`.
+`cag connect` keeps a ControlMaster tunnel in the background with a 30-second
+keepalive. Smart-socket mode uses `ADB_SERVER_SOCKET`; raw-adbd mode allocates a
+free local port and runs `adb connect`.
 
-## 7. Остаточные риски
+## 7. Residual Risks
 
-- Любой может выполнить публичный TCP/SSH handshake на 443, но shell/forwarding
-  недоступны без временного кода или зарегистрированного private key.
-- Developer key ограничен loopback-портом одной машины; device-key — публикацией
-  своего порта; control-key не умеет форвардить.
-- Relay доверен во время первого one-code bootstrap. Скомпрометированный в этот
-  момент relay способен подменить inner host key. Это принятый UX-компромисс
-  CAG-006; последующие изменения ключа fail closed.
-- Утёкший действующий pairing-код достаточен для замены trusted computer. Риск
-  ограничивают предупреждение, TTL 10 минут, лимит попыток и модель одной машины.
-- Uninstall APK удаляет private keys и state. Новая установка требует новый
-  enrollment invite администратора.
+- Anyone can perform the public TCP/SSH handshake on port 443, but shell and
+  forwarding remain unavailable without a temporary code or registered private
+  key.
+- A developer key is restricted to one vehicle's loopback port; a device key
+  can publish only its assigned port; a control key cannot forward.
+- The relay is trusted during the first one-code bootstrap. A compromised relay
+  at that moment can substitute the inner host key. CAG-006 accepts this UX
+  tradeoff; later key changes fail closed.
+- A leaked, still-valid pairing code is sufficient to replace the trusted
+  computer. The warning, ten-minute TTL, attempt limit, and single-vehicle model
+  reduce this risk.
+- Uninstalling the APK removes private keys and state. A fresh install requires
+  a new enrollment invite from an administrator.
 
-## 8. Verification status
+## 8. Verification Status
 
-Локально выполнено 2026-07-18:
+Completed locally on 2026-07-18:
 
-- relay unit: TTL, source lockout, идемпотентный enrollment, pending rollback,
-  двухфазная замена и persistent disable;
-- Ansible syntax check и production-profile lint;
-- CLI unit, `go vet`, Darwin build и Linux cross-build;
-- Android unit: state reducer, backoff, endpoint plan и relay protocol;
-- сборка debug APK с minSdk 26 и targetSdk 36, Android lint без ошибок.
+- relay unit tests for TTL, source lockout, idempotent enrollment, pending
+  rollback, two-phase replacement, and persistent disable;
+- Ansible syntax check and production-profile lint;
+- CLI unit tests, `go vet`, Darwin build, and Linux cross-build;
+- Android unit tests for the state reducer, backoff, endpoint plan, and relay
+  protocol;
+- debug APK build with minSdk 26 and targetSdk 36, plus Android lint with no
+  errors.
 
-До production обязательны:
+Required before production:
 
-- deploy новой Ansible-роли и негативные SSH integration tests на relay;
-- полный relay → CLI → inner SSH → реальный ADB E2E;
-- API 26, 31, 34, 35 и 36;
-- живое ГУ: установка/ADB approval, reboot, sleep/wake, network switching, adbd и
-  relay restart, замена Mac/Linux-компьютера;
-- socket inspection на ГУ, подтверждающий отсутствие внешнего listener;
-- 72-часовой fault-injection soak и измерение восстановления: relay/network не
-  более 90 секунд, ADB не более 60 секунд.
+- deploy the new Ansible role and run negative SSH integration tests on the
+  relay;
+- complete relay → CLI → inner SSH → real ADB end-to-end verification;
+- verify API levels 26, 31, 34, 35, and 36;
+- test installation and ADB approval, reboot, sleep/wake, network switching,
+  adbd and relay restart, and Mac/Linux computer replacement on a real head
+  unit;
+- inspect head-unit sockets to prove there is no external listener;
+- run a 72-hour fault-injection soak and measure recovery: at most 90 seconds
+  for relay/network and at most 60 seconds for ADB.

@@ -1,15 +1,17 @@
 # Project Map
 
-This repository is a small monorepo: a few Android product apps, one shared
-library, plus research/tooling areas. Directory names match product names.
+This repository is a small monorepo: Android apps at different lifecycle stages,
+one shared library, remote-access infrastructure, and research/tooling areas.
+The repository identity is **Denza Lab**; the historical GitHub/local directory
+name may still be `denza-gateway` during the rename.
 
 ## Apps
 
 | Path | APK / product | Purpose | Status |
 | --- | --- | --- | --- |
-| `denza-gateway/` | `denza-gateway` | SSH gateway from the car LAN to local ADB endpoints on the head unit. | Product app. Keep changes conservative and test with unit tests. |
-| `denza-mirrors/` | `denza-mirrors` | Driver-display side-camera enlargement for turn-signal camera windows. | Prototype/product app. Product code lives in `dev.denza.mirrors`; research probes are isolated in `dev.denza.mirrors.probe`. |
-| `denza-apps/` | `denza-apps` | Head app for Denza features. Adds Russian apps to the native Simulcast App Change row via an accessibility overlay, with a configurable app picker. | Prototype app. Self-contained: only this APK + in-app local ADB setup after key authorization are needed on any car; the app grants overlay app-op and enables its accessibility service itself. |
+| `denza-gateway/` | `denza-gateway` | SSH gateway from the car LAN to local ADB endpoints on the head unit. | **Legacy.** Maintenance-only; do not add features. Car ADB Gateway supersedes it for new remote-access work. |
+| `denza-mirrors/` | `denza-mirrors` | Driver-display side-camera enlargement for turn-signal camera windows. | **Transition.** Source for the camera migration into Denza Apps. Product code lives in `dev.denza.mirrors`; research probes are isolated in `dev.denza.mirrors.probe`. |
+| `denza-apps/` | `denza-apps` | Consolidated head-unit app for Denza features. Adds supported apps to the native Simulcast App Change row and will absorb Denza Mirrors behavior. | **Active.** Self-contained: the APK performs its local ADB setup after key authorization, grants the overlay app-op, and enables its accessibility service. |
 | `car-adb-gateway/` | `car-adb-gateway` | Generic relay-only remote ADB gateway. Fixed `adbgw.ru`, one trusted computer, background recovery, no LAN listener. | Product candidate. Local unit/build evidence exists; relay deployment, live-head-unit E2E, API matrix, and soak remain required. |
 
 ## Shared Android Modules
@@ -116,7 +118,7 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 
 | Component | Status |
 | --- | --- |
-| `MainActivity` | Start/Stop control plus "Выбрать приложения"; in-app local-ADB setup grants overlay app-op and enables the Simulcast accessibility service. |
+| `MainActivity` | Start/Stop control plus the app picker; in-app local-ADB setup grants the overlay app-op and enables the Simulcast accessibility service. |
 | `AppPickerActivity` | App selection UI — a horizontal slider of all installed apps; tap to mark up to 6 for casting. Defaults to installed-subset of VK Video / Rutube / Kinopoisk / Yandex Navi / VLC / YouTube. |
 | `SimulcastApps` | Persists the chosen casting packages (prefs) and seeds defaults. |
 | `SimulcastAccessibilityService` | Active visual path. Watches the native DiShare `ShareDialogActivity` via accessibility, reads live node bounds, and erases+redraws the App Change row + central preview with the chosen Russian apps; drag → launch through `dishare-bridge`. |
@@ -140,16 +142,18 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 
 ## Current Product Direction
 
-- `denza-gateway` is the connectivity app. It should not contain camera or HUD
-  experiments.
-- `car-adb-gateway` is the generic relay-only connectivity app. It must not grow
-  a LAN mode; the old `denza-gateway` remains the LAN product.
-- `denza-mirrors` is the camera app. The supported path is dashboard/instrument
-  display enlargement via the AVC AIDL dashboard overlay. Experimental code stays
-  in `dev.denza.mirrors.probe`.
-- `denza-apps` is the head app for miscellaneous car features. The working path is
-  Simulcast for Russian video apps via an accessibility overlay that redraws the
-  native App Change row with the user's chosen apps.
+- `car-adb-gateway` is the active generic relay-only connectivity app. It must
+  not grow a LAN mode.
+- `denza-apps` is the single active Denza feature app. Its working Simulcast path
+  uses an accessibility overlay that redraws the native App Change row with the
+  user's chosen apps. Supported camera behavior should move here behind a clear
+  feature boundary.
+- `denza-mirrors` is in transition. Use it as the verified source for the camera
+  migration and for fixes needed to complete that migration; do not grow it as a
+  separate product.
+- `denza-gateway` is legacy and maintenance-only. The source remains buildable
+  for existing installations, but new connectivity work belongs in Car ADB
+  Gateway.
 - For Simulcast, normal app uid is enough for direct DiShare launches. The native
   `ShareApp` visual metadata is solved at the UI layer: the accessibility overlay
   erases the stock row and paints the chosen apps over it (no metadata injection,
@@ -160,6 +164,20 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 - Vehicle event APIs are research-only for now. Normal app uid access to direct
   BYD getters/listeners was permission-blocked or did not deliver useful
   callbacks.
+
+## Planned Directory Cleanup
+
+Keep Gradle modules at the repository root while Denza Mirrors is being merged
+into Denza Apps. Moving them now would create a large path-only change and then
+require another lifecycle change shortly afterward.
+
+After the migration has been verified on a real head unit:
+
+1. remove retired apps from the default Gradle build;
+2. move active Android apps under `apps/` and shared modules under `libraries/`;
+3. move frozen source under `legacy/` with a short status note;
+4. group `cli/` and `relay/` under `platform/`, while keeping deployment under
+   `ops/`.
 
 ## Build Outputs
 
