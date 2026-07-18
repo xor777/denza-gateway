@@ -3,46 +3,54 @@ package dev.denza.apps.feature.navigation;
 import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Rect;
-import android.hardware.display.DisplayManager;
-import android.hardware.display.VirtualDisplay;
-import android.os.Bundle;
-import android.os.IBinder;
 import android.os.Looper;
-import android.os.RemoteException;
-import android.view.Surface;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
 
-/** Minimal shell-UID entry point. It intentionally exposes no arbitrary command execution. */
+/**
+ * One-shot shell-UID task command. It intentionally exposes only fixed
+ * operations for the allowlisted Yandex Navigator task and always exits.
+ */
 public final class ClusterProxyMain {
     private static final String ALLOWED_PACKAGE = "ru.yandex.yandexnavi";
-    private static final int VIRTUAL_DISPLAY_FLAGS = 322;
+    private static final String RESULT_PREFIX = "DENZA_RESULT:";
 
     private ClusterProxyMain() {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 1 || args[0].length() < 32) {
-            throw new IllegalArgumentException("one-time token required");
-        }
+        if (args.length < 1) throw new IllegalArgumentException("operation required");
         Looper.prepareMainLooper();
-        Context context = systemContext();
-        TaskProxy binder = new TaskProxy(context, args[0]);
-        Intent connected = new Intent(ProxyConnectionReceiver.ACTION_CONNECTED);
-        connected.setComponent(new ComponentName(
-                "dev.denza.apps",
-                "dev.denza.apps.feature.navigation.ProxyConnectionReceiver"));
-        connected.putExtra(ProxyConnectionReceiver.EXTRA_TOKEN, args[0]);
-        Bundle extras = connected.getExtras();
-        if (extras == null) extras = new Bundle();
-        extras.putBinder(ProxyConnectionReceiver.EXTRA_BINDER, binder);
-        connected.replaceExtras(extras);
-        context.sendBroadcast(connected);
-        Looper.loop();
+        Commands commands = new Commands(systemContext());
+        switch (args[0]) {
+            case "find-task":
+                requireCount(args, 2);
+                result(commands.findAllowedTask(args[1]));
+                return;
+            case "move-task":
+                requireCount(args, 3);
+                result(commands.moveTask(integer(args[1]), integer(args[2])));
+                return;
+            case "set-bounds":
+                requireCount(args, 6);
+                result(commands.setTaskBounds(
+                        integer(args[1]), integer(args[2]), integer(args[3]),
+                        integer(args[4]), integer(args[5])));
+                return;
+            case "focus-task":
+                requireCount(args, 2);
+                result(commands.focusTask(integer(args[1])));
+                return;
+            case "task-display":
+                requireCount(args, 2);
+                result(commands.taskDisplayId(integer(args[1])));
+                return;
+            default:
+                throw new IllegalArgumentException("unsupported operation");
+        }
     }
 
     private static Context systemContext() throws Exception {
@@ -52,44 +60,32 @@ public final class ClusterProxyMain {
         return (Context) getSystemContext.invoke(activityThread);
     }
 
-    private static final class TaskProxy extends IClusterTaskProxy.Stub {
+    private static void requireCount(String[] args, int expected) {
+        if (args.length != expected) throw new IllegalArgumentException("invalid argument count");
+    }
+
+    private static int integer(String value) {
+        try {
+            int parsed = Integer.parseInt(value);
+            if (parsed < 0) throw new IllegalArgumentException("negative integer");
+            return parsed;
+        } catch (NumberFormatException error) {
+            throw new IllegalArgumentException("invalid integer", error);
+        }
+    }
+
+    private static void result(Object value) {
+        System.out.println(RESULT_PREFIX + value);
+    }
+
+    private static final class Commands {
         private final Context context;
-        private final String token;
-        private VirtualDisplay virtualDisplay;
 
-        TaskProxy(Context context, String token) {
+        Commands(Context context) {
             this.context = context;
-            this.token = token;
         }
 
-        @Override
-        public synchronized int createVirtualDisplay(String candidateToken, String name,
-                int width, int height, int densityDpi, Surface surface) {
-            enforceToken(candidateToken);
-            if (surface == null || !surface.isValid()) return -1;
-            releaseVirtualDisplay(candidateToken);
-            DisplayManager manager = context.getSystemService(DisplayManager.class);
-            if (manager == null) return -1;
-            virtualDisplay = manager.createVirtualDisplay(
-                    safeName(name),
-                    clamp(width, 320, 7680),
-                    clamp(height, 240, 4320),
-                    clamp(densityDpi, 120, 640),
-                    surface,
-                    VIRTUAL_DISPLAY_FLAGS);
-            return virtualDisplay == null ? -1 : virtualDisplay.getDisplay().getDisplayId();
-        }
-
-        @Override
-        public synchronized void releaseVirtualDisplay(String candidateToken) {
-            enforceToken(candidateToken);
-            if (virtualDisplay != null) virtualDisplay.release();
-            virtualDisplay = null;
-        }
-
-        @Override
-        public int findAllowedTask(String candidateToken, String packageName) {
-            enforceToken(candidateToken);
+        int findAllowedTask(String packageName) {
             if (!ALLOWED_PACKAGE.equals(packageName)) return -1;
             for (ActivityManager.RunningTaskInfo task : tasks()) {
                 if (belongsToAllowedPackage(task)) return task.taskId;
@@ -97,9 +93,8 @@ public final class ClusterProxyMain {
             return -1;
         }
 
-        @Override
-        public boolean moveTask(String candidateToken, int taskId, int displayId) {
-            enforceTask(candidateToken, taskId);
+        boolean moveTask(int taskId, int displayId) {
+            enforceTask(taskId);
             return invokeTaskManager(
                     new String[] {"moveRootTaskToDisplay", "moveTaskToDisplay", "moveStackToDisplay"},
                     new Class<?>[] {int.class, int.class},
@@ -107,11 +102,13 @@ public final class ClusterProxyMain {
                     displayId);
         }
 
-        @Override
-        public boolean setTaskBounds(String candidateToken, int taskId,
-                int left, int top, int right, int bottom) {
-            enforceTask(candidateToken, taskId);
-            Rect bounds = right > left && bottom > top ? new Rect(left, top, right, bottom) : null;
+        boolean setTaskBounds(int taskId, int left, int top, int right, int bottom) {
+            enforceTask(taskId);
+            boolean clear = left == 0 && top == 0 && right == 0 && bottom == 0;
+            if (!clear && (right <= left || bottom <= top)) {
+                throw new IllegalArgumentException("invalid bounds");
+            }
+            Rect bounds = clear ? null : new Rect(left, top, right, bottom);
             return invokeTaskManager(
                     new String[] {"resizeTask"},
                     new Class<?>[] {int.class, Rect.class, int.class},
@@ -120,20 +117,20 @@ public final class ClusterProxyMain {
                     0);
         }
 
-        @Override
-        public boolean focusTask(String candidateToken, int taskId) {
-            enforceTask(candidateToken, taskId);
+        boolean focusTask(int taskId) {
+            enforceTask(taskId);
             return invokeTaskManager(
                     new String[] {"setFocusedTask"},
                     new Class<?>[] {int.class},
                     taskId);
         }
 
-        @Override
-        public int taskDisplayId(String candidateToken, int taskId) {
-            enforceTask(candidateToken, taskId);
+        int taskDisplayId(int taskId) {
+            enforceTask(taskId);
             for (ActivityManager.RunningTaskInfo task : tasks()) {
-                if (task.taskId == taskId && belongsToAllowedPackage(task)) return displayIdOf(task);
+                if (task.taskId == taskId && belongsToAllowedPackage(task)) {
+                    return displayIdOf(task);
+                }
             }
             return -1;
         }
@@ -159,8 +156,7 @@ public final class ClusterProxyMain {
                 try {
                     Field configurationField = task.getClass().getField("configuration");
                     Object configuration = configurationField.get(task);
-                    Field windowConfiguration = configuration.getClass()
-                            .getField("windowConfiguration");
+                    Field windowConfiguration = configuration.getClass().getField("windowConfiguration");
                     Object value = windowConfiguration.get(configuration);
                     Method getDisplayId = value.getClass().getMethod("getDisplayId");
                     return (Integer) getDisplayId.invoke(value);
@@ -170,16 +166,11 @@ public final class ClusterProxyMain {
             }
         }
 
-        private void enforceTask(String candidateToken, int taskId) {
-            enforceToken(candidateToken);
+        private void enforceTask(int taskId) {
             for (ActivityManager.RunningTaskInfo task : tasks()) {
                 if (task.taskId == taskId && belongsToAllowedPackage(task)) return;
             }
             throw new SecurityException("task is not an allowed Yandex task");
-        }
-
-        private void enforceToken(String candidateToken) {
-            if (!token.equals(candidateToken)) throw new SecurityException("invalid proxy token");
         }
 
         private boolean invokeTaskManager(String[] names, Class<?>[] parameterTypes, Object... args) {
@@ -200,15 +191,6 @@ public final class ClusterProxyMain {
                 return false;
             }
             return false;
-        }
-
-        private static String safeName(String name) {
-            return name != null && name.startsWith("Denza Navigation")
-                    ? name : "Denza Navigation";
-        }
-
-        private static int clamp(int value, int minimum, int maximum) {
-            return Math.max(minimum, Math.min(maximum, value));
         }
     }
 }

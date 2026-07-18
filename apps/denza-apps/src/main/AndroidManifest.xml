@@ -43,7 +43,6 @@
             android:name=".feature.mirrors.SideCameraMonitorService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-
         <receiver
             android:name=".SimulcastBootReceiver"
             android:directBootAware="true"
@@ -60,14 +59,6 @@
                 <action android:name="dev.denza.apps.STOP_SIMULCAST_TARGET" />
             </intent-filter>
         </receiver>
-        <receiver
-            android:name=".feature.navigation.ProxyConnectionReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="dev.denza.apps.navigation.PROXY_CONNECTED" />
-            </intent-filter>
-        </receiver>
-
         <activity
             android:name=".MainActivity"
             android:exported="true"

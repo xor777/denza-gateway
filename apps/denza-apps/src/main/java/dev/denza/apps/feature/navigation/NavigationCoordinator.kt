@@ -27,9 +27,8 @@ object NavigationCoordinator {
             return
         }
         initialized = true
-        NavigationProxyClient.onProxyDied = { executor.execute(::handleProxyDeath) }
         executor.execute(::discoverTask)
-        executor.scheduleWithFixedDelay(::verifyActiveSession, 1L, 1L, TimeUnit.SECONDS)
+        executor.scheduleWithFixedDelay(::verifyActiveSession, 5L, 5L, TimeUnit.SECONDS)
     }
 
     fun snapshot(): NavigationSession = session
@@ -56,11 +55,7 @@ object NavigationCoordinator {
             return
         }
         try {
-            val proxy = NavigationProxyClient.ensureConnected(app)
-            val task = proxy.findAllowedTask(
-                NavigationProxyClient.currentToken(),
-                YandexPackagePolicy.NAVIGATOR,
-            )
+            val task = NavigationProxyClient.findAllowedTask(app, YandexPackagePolicy.NAVIGATOR)
             update(NavigationSession(taskId = task.takeIf { it >= 0 }))
         } catch (error: Exception) {
             update(
@@ -105,11 +100,7 @@ object NavigationCoordinator {
     private fun discoverLaunchedTask(attemptsRemaining: Int) {
         val app = context ?: return
         try {
-            val proxy = NavigationProxyClient.ensureConnected(app)
-            val task = proxy.findAllowedTask(
-                NavigationProxyClient.currentToken(),
-                YandexPackagePolicy.NAVIGATOR,
-            )
+            val task = NavigationProxyClient.findAllowedTask(app, YandexPackagePolicy.NAVIGATOR)
             if (task >= 0) {
                 update(NavigationSession(taskId = task))
             } else if (attemptsRemaining > 0) {
@@ -174,27 +165,26 @@ object NavigationCoordinator {
             if (!consumed.compareAndSet(false, true)) return@MapSurfaceConsumer
             executor.execute {
                 try {
-                    val proxy = NavigationProxyClient.ensureConnected(app)
                     val displayId = NavigationProxyClient.createVirtualDisplay(
-                        proxy,
+                        app,
                         surface,
                         width,
                         height,
                         density,
                     )
                     check(displayId >= 0) { "virtual display creation failed" }
-                    check(proxy.moveTask(NavigationProxyClient.currentToken(), taskId, displayId)) {
+                    check(NavigationProxyClient.moveTask(app, taskId, displayId)) {
                         "task move failed"
                     }
-                    check(proxy.setTaskBounds(
-                        NavigationProxyClient.currentToken(),
+                    check(NavigationProxyClient.setTaskBounds(
+                        app,
                         taskId,
                         0,
                         0,
                         width,
                         height,
                     )) { "task bounds failed" }
-                    check(proxy.focusTask(NavigationProxyClient.currentToken(), taskId)) {
+                    check(NavigationProxyClient.focusTask(app, taskId)) {
                         "task focus failed"
                     }
                     update(
@@ -225,16 +215,15 @@ object NavigationCoordinator {
         val taskId = session.taskId
         update(session.copy(phase = NavigationPhase.RETURNING, message = "Возвращаю на главный экран"))
         try {
-            val proxy = NavigationProxyClient.ensureConnected(app)
             if (taskId != null) {
                 val currentDisplay = runCatching {
-                    proxy.taskDisplayId(NavigationProxyClient.currentToken(), taskId)
+                    NavigationProxyClient.taskDisplayId(app, taskId)
                 }.getOrDefault(-1)
                 if (currentDisplay > 0) {
-                    proxy.moveTask(NavigationProxyClient.currentToken(), taskId, 0)
+                    NavigationProxyClient.moveTask(app, taskId, 0)
                 }
-                proxy.setTaskBounds(NavigationProxyClient.currentToken(), taskId, 0, 0, 0, 0)
-                proxy.focusTask(NavigationProxyClient.currentToken(), taskId)
+                NavigationProxyClient.setTaskBounds(app, taskId, 0, 0, 0, 0)
+                NavigationProxyClient.focusTask(app, taskId)
             }
         } catch (_: Exception) {
             // Releasing the display below is still the safest available fallback.
@@ -252,19 +241,18 @@ object NavigationCoordinator {
         val taskId = current.taskId ?: return
         val expectedDisplay = current.virtualDisplayId ?: return
         try {
-            val proxy = NavigationProxyClient.ensureConnected(app)
-            val actualDisplay = proxy.taskDisplayId(NavigationProxyClient.currentToken(), taskId)
+            val actualDisplay = NavigationProxyClient.taskDisplayId(app, taskId)
             if (actualDisplay != expectedDisplay) {
                 NavigationProxyClient.releaseVirtualDisplay()
                 ClusterSceneService.hideMap(app)
                 update(NavigationSession(taskId = taskId.takeIf { actualDisplay >= 0 }))
             }
         } catch (_: Exception) {
-            handleProxyDeath()
+            handleCommandFailure()
         }
     }
 
-    private fun handleProxyDeath() {
+    private fun handleCommandFailure() {
         val app = context ?: return
         val previous = session
         update(NavigationRecovery.proxyLost(previous))

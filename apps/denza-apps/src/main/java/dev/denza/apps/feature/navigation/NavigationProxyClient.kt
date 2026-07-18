@@ -1,103 +1,111 @@
 package dev.denza.apps.feature.navigation
 
 import android.content.Context
-import android.os.IBinder
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
 import android.view.Surface
 import dev.denza.disharebridge.LocalAdbClient
-import java.security.SecureRandom
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
+/**
+ * Fixed-operation shell bridge plus an app-owned navigation virtual display.
+ *
+ * The car strips Binder objects from manifest broadcasts and rejects bound
+ * services from a bare app_process caller. Keeping the Surface and
+ * VirtualDisplay in the app removes that cross-process Binder handshake; short
+ * shell-UID commands perform only the allowlisted task operations below.
+ */
 object NavigationProxyClient {
-    private const val PROCESS_NAME = "denza_apps_proxy"
     private const val KEY_COMMENT = "denza-apps@denza"
+    private const val MAIN_CLASS = "dev.denza.apps.feature.navigation.ClusterProxyMain"
+    private const val RESULT_PREFIX = "DENZA_RESULT:"
+    private val DISPLAY_FLAGS =
+        DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
+
     private val lock = Any()
-    @Volatile private var pendingToken: String? = null
-    @Volatile private var token: String? = null
-    @Volatile private var proxy: IClusterTaskProxy? = null
-    @Volatile private var connectionLatch = CountDownLatch(0)
-    @Volatile var onProxyDied: (() -> Unit)? = null
+    @Volatile private var virtualDisplay: VirtualDisplay? = null
 
-    fun ensureConnected(context: Context, timeoutMs: Long = 5_000L): IClusterTaskProxy {
-        proxy?.let { return it }
-        synchronized(lock) {
-            proxy?.let { return it }
-            val nextToken = randomToken()
-            pendingToken = nextToken
-            connectionLatch = CountDownLatch(1)
-            val adb = LocalAdbClient(context, KEY_COMMENT)
-            stopPreviousProxy(adb)
-            val apk = shellQuote(context.applicationInfo.sourceDir)
-            val command = "CLASSPATH=$apk nohup app_process /system/bin " +
-                "dev.denza.apps.feature.navigation.ClusterProxyMain " +
-                shellQuote(nextToken) + " </dev/null >/dev/null 2>&1 &"
-            adb.shell(command)
-        }
-        if (!connectionLatch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-            throw IllegalStateException("shell proxy connection timeout")
-        }
-        return proxy ?: throw IllegalStateException("shell proxy did not provide a binder")
-    }
-
-    fun currentToken(): String = token ?: throw IllegalStateException("shell proxy is not connected")
+    fun findAllowedTask(context: Context, packageName: String): Int =
+        intResult(run(context, "find-task", packageName))
 
     fun createVirtualDisplay(
-        proxy: IClusterTaskProxy,
+        context: Context,
         surface: Surface,
         width: Int,
         height: Int,
         densityDpi: Int,
-    ): Int = proxy.createVirtualDisplay(
-        currentToken(),
-        "Denza Navigation",
-        width,
-        height,
-        densityDpi,
-        surface,
+    ): Int = synchronized(lock) {
+        releaseVirtualDisplay()
+        check(surface.isValid) { "navigation surface is invalid" }
+        val manager = context.getSystemService(DisplayManager::class.java)
+            ?: error("display manager unavailable")
+        virtualDisplay = manager.createVirtualDisplay(
+            "Denza Navigation",
+            width.coerceIn(320, 7_680),
+            height.coerceIn(240, 4_320),
+            densityDpi.coerceIn(120, 640),
+            surface,
+            DISPLAY_FLAGS,
+        ) ?: error("virtual display creation failed")
+        virtualDisplay!!.display.displayId
+    }
+
+    fun moveTask(context: Context, taskId: Int, displayId: Int): Boolean =
+        booleanResult(run(context, "move-task", taskId.toString(), displayId.toString()))
+
+    fun setTaskBounds(
+        context: Context,
+        taskId: Int,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+    ): Boolean = booleanResult(
+        run(
+            context,
+            "set-bounds",
+            taskId.toString(),
+            left.toString(),
+            top.toString(),
+            right.toString(),
+            bottom.toString(),
+        ),
     )
 
-    fun releaseVirtualDisplay() {
-        val service = proxy ?: return
-        runCatching { service.releaseVirtualDisplay(currentToken()) }
+    fun focusTask(context: Context, taskId: Int): Boolean =
+        booleanResult(run(context, "focus-task", taskId.toString()))
+
+    fun taskDisplayId(context: Context, taskId: Int): Int =
+        intResult(run(context, "task-display", taskId.toString()))
+
+    fun releaseVirtualDisplay() = synchronized(lock) {
+        virtualDisplay?.release()
+        virtualDisplay = null
     }
 
-    fun disconnect() {
-        proxy = null
-        token = null
-        pendingToken = null
+    fun disconnect() = releaseVirtualDisplay()
+
+    private fun run(context: Context, operation: String, vararg arguments: String): String {
+        val apk = shellQuote(context.applicationInfo.sourceDir)
+        val args = (listOf(operation) + arguments).joinToString(" ") { shellQuote(it) }
+        val command = "CLASSPATH=$apk app_process /system/bin --nice-name=denza_nav_cmd " +
+            "$MAIN_CLASS $args"
+        return LocalAdbClient(context, KEY_COMMENT).shell(command)
     }
 
-    internal fun acceptConnection(candidateToken: String, binder: IBinder) {
-        if (candidateToken != pendingToken) return
-        val service = IClusterTaskProxy.Stub.asInterface(binder) ?: return
-        try {
-            binder.linkToDeath({
-                proxy = null
-                token = null
-                onProxyDied?.invoke()
-            }, 0)
-        } catch (_: android.os.RemoteException) {
-            return
-        }
-        token = candidateToken
-        proxy = service
-        pendingToken = null
-        connectionLatch.countDown()
-    }
+    internal fun resultValue(output: String): String = output.lineSequence()
+        .map(String::trim)
+        .lastOrNull { it.startsWith(RESULT_PREFIX) }
+        ?.removePrefix(RESULT_PREFIX)
+        ?: throw IllegalStateException("navigation command returned no result")
 
-    private fun stopPreviousProxy(adb: LocalAdbClient) {
-        val output = runCatching { adb.shell("pidof $PROCESS_NAME") }.getOrDefault("")
-        val pids = output.trim().split(Regex("\\s+"))
-            .filter { it.matches(Regex("[1-9][0-9]*")) }
-        for (pid in pids) {
-            runCatching { adb.shell("kill $pid") }
-        }
-    }
+    private fun intResult(output: String): Int = resultValue(output).toIntOrNull()
+        ?: throw IllegalStateException("navigation command returned a non-integer result")
 
-    private fun randomToken(): String {
-        val bytes = ByteArray(32)
-        SecureRandom().nextBytes(bytes)
-        return bytes.joinToString("") { "%02x".format(it) }
+    private fun booleanResult(output: String): Boolean = when (resultValue(output)) {
+        "true" -> true
+        "false" -> false
+        else -> throw IllegalStateException("navigation command returned a non-boolean result")
     }
 
     private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
