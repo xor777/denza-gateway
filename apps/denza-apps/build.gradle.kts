@@ -25,4 +25,6 @@ android {
 
 dependencies {
     implementation(project(":dishare-bridge"))
+
+    testImplementation("junit:junit:4.13.2")
 }
