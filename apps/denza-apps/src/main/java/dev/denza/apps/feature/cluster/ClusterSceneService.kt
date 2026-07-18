@@ -75,7 +75,6 @@ class ClusterSceneService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun prepareScene(): ClusterPresentation? {
-        presentation?.let { return it }
         val selection = ClusterDisplayResolver.resolve(this)
         if (selection !is ClusterDisplaySelection.Selected) {
             updateNotification(
@@ -87,6 +86,11 @@ class ClusterSceneService : Service() {
             )
             stopSelf()
             return null
+        }
+        presentation?.let { current ->
+            if (current.display.displayId == selection.display.id) return current
+            current.dismiss()
+            presentation = null
         }
         val manager = getSystemService(android.hardware.display.DisplayManager::class.java)
         val display = manager?.getDisplay(selection.display.id)

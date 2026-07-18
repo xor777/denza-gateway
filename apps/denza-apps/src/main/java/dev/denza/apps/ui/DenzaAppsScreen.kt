@@ -1,6 +1,7 @@
 package dev.denza.apps.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +31,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.Image
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -44,12 +48,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.graphics.drawable.toBitmap
 import dev.denza.apps.DenzaUiState
+import dev.denza.apps.SimulcastAppChoice
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
 import dev.denza.apps.feature.mirrors.MirrorsPosition
@@ -74,7 +85,10 @@ fun DenzaAppsRoot(
     onMirrorsProcessing: (Boolean) -> Unit,
     onPreviewMirrors: () -> Unit,
     onNavigationAction: () -> Unit,
+    onSelectClusterDisplay: (Int?) -> Unit,
     onChooseApps: () -> Unit,
+    onCloseAppPicker: () -> Unit,
+    onToggleApp: (String) -> Unit,
 ) {
     val uiState by state.collectAsState()
     var showSupport by remember { mutableStateOf(false) }
@@ -192,11 +206,104 @@ fun DenzaAppsRoot(
         SupportDialog(
             state = uiState,
             showTechnical = showTechnical,
+            onSelectClusterDisplay = onSelectClusterDisplay,
             onDismiss = {
                 showSupport = false
                 showTechnical = false
             },
         )
+    }
+    if (uiState.appPickerVisible) {
+        AppPickerDialog(
+            apps = uiState.appChoices,
+            selectedCount = uiState.selectedAppCount,
+            message = uiState.appPickerMessage,
+            onToggle = onToggleApp,
+            onDismiss = onCloseAppPicker,
+        )
+    }
+}
+
+@Composable
+private fun AppPickerDialog(
+    apps: List<SimulcastAppChoice>,
+    selectedCount: Int,
+    message: String,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.92f),
+            color = SurfaceColor,
+            shape = RoundedCornerShape(26.dp),
+        ) {
+            Column(modifier = Modifier.padding(28.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column {
+                        Text("Приложения", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Выбрано $selectedCount из 6", color = Muted, fontSize = 14.sp)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("Готово") }
+                }
+                if (message.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(message, color = Warning, fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(18.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(apps, key = { it.packageName }) { app ->
+                        AppChoiceTile(app = app, onClick = { onToggle(app.packageName) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppChoiceTile(app: SimulcastAppChoice, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    val bitmap = remember(app.packageName, app.icon) {
+        app.icon?.toBitmap(128, 128)?.asImageBitmap()
+    }
+    Card(
+        modifier = Modifier
+            .width(146.dp)
+            .height(188.dp)
+            .then(if (app.selected) Modifier.border(2.dp, Accent, shape) else Modifier)
+            .clickable(onClick = onClick),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Elevated),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (bitmap != null) {
+                Image(
+                    painter = BitmapPainter(bitmap),
+                    contentDescription = null,
+                    modifier = Modifier.size(92.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Icon(Icons.Outlined.Apps, null, modifier = Modifier.size(72.dp), tint = Muted)
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                app.label,
+                color = if (app.selected) Accent else Ink,
+                fontSize = 14.sp,
+                fontWeight = if (app.selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 2,
+            )
+        }
     }
 }
 
@@ -345,7 +452,12 @@ private fun Footer(state: DenzaUiState) {
 }
 
 @Composable
-private fun SupportDialog(state: DenzaUiState, showTechnical: Boolean, onDismiss: () -> Unit) {
+private fun SupportDialog(
+    state: DenzaUiState,
+    showTechnical: Boolean,
+    onSelectClusterDisplay: (Int?) -> Unit,
+    onDismiss: () -> Unit,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(if (showTechnical) Icons.Outlined.Build else Icons.Outlined.Info, null) },
@@ -357,6 +469,20 @@ private fun SupportDialog(state: DenzaUiState, showTechnical: Boolean, onDismiss
                     else "Приложение самостоятельно восстанавливает необходимые службы. Если функция просит действие, подтвердите ADB-ключ на экране автомобиля и нажмите «Исправить».",
                     fontFamily = if (showTechnical) FontFamily.Monospace else FontFamily.Default,
                 )
+                if (showTechnical) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("Instrument display", fontWeight = FontWeight.SemiBold)
+                    state.clusterCandidates
+                        .filter { it.id != 0 && !it.isOwnVirtualDisplay }
+                        .forEach { display ->
+                            TextButton(onClick = { onSelectClusterDisplay(display.id) }) {
+                                Text("#${display.id} · ${display.name} · ${display.width}×${display.height}")
+                            }
+                        }
+                    TextButton(onClick = { onSelectClusterDisplay(null) }) {
+                        Text("Use automatic detection")
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } },

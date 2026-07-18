@@ -1,7 +1,9 @@
 package dev.denza.apps
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.provider.Settings
 import android.text.TextUtils
 import dev.denza.apps.core.FeatureId
@@ -9,6 +11,7 @@ import dev.denza.apps.core.FeatureReducer
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
 import dev.denza.apps.feature.cluster.ClusterDisplayResolver
+import dev.denza.apps.feature.cluster.ClusterDisplayDescriptor
 import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterSceneService
 import dev.denza.apps.feature.mirrors.MirrorsPosition
@@ -22,6 +25,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.security.GeneralSecurityException
 import java.util.concurrent.Executors
+
+data class SimulcastAppChoice(
+    val packageName: String,
+    val label: String,
+    val icon: Drawable?,
+    val selected: Boolean,
+)
 
 data class DenzaUiState(
     val simulcast: FeatureSnapshot = FeatureReducer.disabled(FeatureId.SIMULCAST),
@@ -37,6 +47,10 @@ data class DenzaUiState(
     val mirrorsProcessing: Boolean = true,
     val setupRunning: Boolean = false,
     val technicalDetails: String = "",
+    val clusterCandidates: List<ClusterDisplayDescriptor> = emptyList(),
+    val appPickerVisible: Boolean = false,
+    val appChoices: List<SimulcastAppChoice> = emptyList(),
+    val appPickerMessage: String = "",
 )
 
 /** Android-facing state owner shared by the Compose shell and runtime services. */
@@ -61,6 +75,17 @@ object DenzaAppRepository {
         NavigationCoordinator.initialize(context) { refresh() }
     }
 
+    fun recoverEnabledFeatures(context: Context) {
+        appContext = context.applicationContext
+        refresh()
+        if (SimulcastIntegration.isEnabled(context)) {
+            reconcileSimulcast(repairMissingSetup = true)
+        }
+        if (MirrorsSettings.isEnabled(context)) {
+            reconcileMirrors()
+        }
+    }
+
     fun refresh() {
         val context = appContext ?: return
         val desired = SimulcastIntegration.isEnabled(context)
@@ -75,6 +100,7 @@ object DenzaAppRepository {
             navigation = navigationSnapshot(navigationSession.phase, navigationSession.message, navigationSession.details),
             navigationButtonLabel = navigationSession.buttonLabel,
             technicalDetails = diagnostics(context),
+            clusterCandidates = ClusterDisplayResolver.candidates(context),
         )
     }
 
@@ -95,6 +121,40 @@ object DenzaAppRepository {
 
     fun repairSimulcast() {
         reconcileSimulcast(repairMissingSetup = true, forceRepair = true)
+    }
+
+    fun showAppPicker() {
+        val context = appContext ?: return
+        mutableState.value = mutableState.value.copy(
+            appPickerVisible = true,
+            appChoices = loadAppChoices(context),
+            appPickerMessage = "",
+        )
+    }
+
+    fun hideAppPicker() {
+        mutableState.value = mutableState.value.copy(appPickerVisible = false)
+    }
+
+    fun toggleAppSelection(packageName: String) {
+        val context = appContext ?: return
+        val selected = SimulcastApps.getSelected(context).toMutableList()
+        if (packageName in selected) {
+            selected.remove(packageName)
+        } else if (selected.size >= SimulcastApps.MAX_SELECTED) {
+            mutableState.value = mutableState.value.copy(
+                appPickerMessage = "Можно выбрать не больше ${SimulcastApps.MAX_SELECTED}",
+            )
+            return
+        } else {
+            selected.add(packageName)
+        }
+        SimulcastApps.setSelected(context, selected)
+        refresh()
+        mutableState.value = mutableState.value.copy(
+            appChoices = loadAppChoices(context),
+            appPickerMessage = "",
+        )
     }
 
     fun setMirrorsEnabled(enabled: Boolean) {
@@ -138,6 +198,21 @@ object DenzaAppRepository {
 
     fun performNavigationAction() {
         NavigationCoordinator.performPrimaryAction()
+    }
+
+    fun selectClusterDisplay(displayId: Int?) {
+        val context = appContext ?: return
+        ClusterDisplayResolver.saveOverride(context, displayId)
+        if (displayId != null) {
+            ClusterSceneService.preview(
+                context,
+                MirrorsSettings.position(context),
+                visible = true,
+                durationMs = 2_200L,
+            )
+        }
+        refresh()
+        if (MirrorsSettings.isEnabled(context)) reconcileMirrors()
     }
 
     private fun reconcileMirrors() {
@@ -352,6 +427,28 @@ object DenzaAppRepository {
         appendLine("Mirrors runtime=${MirrorsSettings.statusDetails(context)}")
         appendLine("Cluster selection=${ClusterDisplayResolver.resolve(context)}")
         append("Navigation=${NavigationCoordinator.snapshot()}")
+    }
+
+    private fun loadAppChoices(context: Context): List<SimulcastAppChoice> {
+        val selected = SimulcastApps.getSelected(context)
+        val selectedOrder = selected.withIndex().associate { it.value to it.index }
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val seen = HashSet<String>()
+        return context.packageManager.queryIntentActivities(launcherIntent, 0)
+            .mapNotNull { info ->
+                val packageName = info.activityInfo?.packageName ?: return@mapNotNull null
+                if (packageName == context.packageName || !seen.add(packageName)) return@mapNotNull null
+                SimulcastAppChoice(
+                    packageName = packageName,
+                    label = info.loadLabel(context.packageManager).toString(),
+                    icon = runCatching { info.loadIcon(context.packageManager) }.getOrNull(),
+                    selected = packageName in selectedOrder,
+                )
+            }
+            .sortedWith(
+                compareBy<SimulcastAppChoice> { selectedOrder[it.packageName] ?: Int.MAX_VALUE }
+                    .thenBy(String.CASE_INSENSITIVE_ORDER) { it.label },
+            )
     }
 
     private fun isInstalled(packageManager: PackageManager, packageName: String): Boolean = try {

@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
+import dev.denza.apps.core.DenzaRuntimeCoordinator;
+
 /**
  * Forwards DiShare dialog broadcasts (to keep the floating exit control in sync) and
  * the debug start/stop actions to {@link SimulcastOverlayService}. The Simulcast
@@ -21,6 +23,17 @@ public class SimulcastBootReceiver extends BroadcastReceiver {
         }
         Log.i(TAG, "action=" + action);
         boolean enabled = SimulcastIntegration.isEnabled(context);
+
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action)
+                || Intent.ACTION_LOCKED_BOOT_COMPLETED.equals(action)
+                || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            try {
+                DenzaRuntimeCoordinator.INSTANCE.recover(context);
+            } catch (RuntimeException e) {
+                Log.i(TAG, "runtime recovery failed", e);
+            }
+            return;
+        }
 
         if (SimulcastOverlayService.ACTION_DISHARE_DIALOG_HOME.equals(action)
                 || SimulcastOverlayService.ACTION_DISHARE_DIALOG_LAUNCHER.equals(action)

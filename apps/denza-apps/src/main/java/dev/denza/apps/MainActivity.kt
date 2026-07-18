@@ -1,6 +1,5 @@
 package dev.denza.apps
 
-import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,9 +22,10 @@ class MainActivity : ComponentActivity() {
                     onMirrorsProcessing = DenzaAppRepository::setMirrorsProcessing,
                     onPreviewMirrors = DenzaAppRepository::previewMirrors,
                     onNavigationAction = DenzaAppRepository::performNavigationAction,
-                    onChooseApps = {
-                        startActivity(Intent(this, AppPickerActivity::class.java))
-                    },
+                    onSelectClusterDisplay = DenzaAppRepository::selectClusterDisplay,
+                    onChooseApps = DenzaAppRepository::showAppPicker,
+                    onCloseAppPicker = DenzaAppRepository::hideAppPicker,
+                    onToggleApp = DenzaAppRepository::toggleAppSelection,
                 )
             },
         )

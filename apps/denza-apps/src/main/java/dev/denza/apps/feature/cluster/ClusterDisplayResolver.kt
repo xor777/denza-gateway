@@ -21,14 +21,19 @@ object ClusterDisplayResolver {
     )
 
     fun resolve(context: Context): ClusterDisplaySelection {
-        val manager = context.getSystemService(DisplayManager::class.java)
-            ?: return ClusterDisplaySelection.Missing
-        val candidates = manager.displays.map(::describe)
+        val candidates = candidates(context)
+        if (candidates.isEmpty()) return ClusterDisplaySelection.Missing
         val override = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .getInt(PREF_OVERRIDE, Display.INVALID_DISPLAY)
             .takeIf { it != Display.INVALID_DISPLAY }
         return select(candidates, override)
     }
+
+    fun candidates(context: Context): List<ClusterDisplayDescriptor> =
+        context.getSystemService(DisplayManager::class.java)
+            ?.displays
+            ?.map(::describe)
+            .orEmpty()
 
     fun saveOverride(context: Context, displayId: Int?) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply {
@@ -95,13 +100,19 @@ object ClusterDisplayResolver {
             // Android's public Display API does not expose the backing type on
             // all platform SDKs. Keep it unknown unless a platform adapter can
             // supply a trusted value; names and real metrics remain authoritative.
-            type = DISPLAY_TYPE_UNKNOWN,
+            type = displayType(display),
             flags = display.flags,
             isOwnVirtualDisplay = lowerName.startsWith("denza apps") ||
                 lowerName.startsWith("denza_cluster") ||
                 lowerName.startsWith("denza navigation"),
         )
     }
+
+    private fun displayType(display: Display): Int = runCatching {
+        val method = Display::class.java.getDeclaredMethod("getType")
+        method.isAccessible = true
+        method.invoke(display) as Int
+    }.getOrDefault(DISPLAY_TYPE_UNKNOWN)
 
     const val DISPLAY_TYPE_UNKNOWN = 0
     const val DISPLAY_TYPE_VIRTUAL = 5

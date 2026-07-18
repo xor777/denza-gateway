@@ -69,11 +69,6 @@
         </receiver>
 
         <activity
-            android:name=".AppPickerActivity"
-            android:exported="false"
-            android:label="Приложения для трансляции" />
-
-        <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop">
