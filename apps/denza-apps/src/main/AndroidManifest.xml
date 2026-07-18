@@ -3,6 +3,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- QUERY_ALL_PACKAGES lets the app picker list every installed app on any car
          and resolve icons/labels for the chosen casting apps. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
@@ -32,6 +33,9 @@
                 <action android:name="dev.denza.apps.STOP_SIMULCAST_TARGET" />
             </intent-filter>
         </service>
+        <service
+            android:name=".feature.cluster.ClusterSceneService"
+            android:exported="false" />
 
         <receiver
             android:name=".SimulcastBootReceiver"
