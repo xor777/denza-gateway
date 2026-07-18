@@ -18,7 +18,9 @@ import dev.denza.apps.feature.mirrors.MirrorsPosition
 import dev.denza.apps.feature.mirrors.MirrorsSettings
 import dev.denza.apps.feature.mirrors.SideCameraMonitorService
 import dev.denza.apps.feature.navigation.NavigationCoordinator
+import dev.denza.apps.feature.navigation.NavigationAppPolicy
 import dev.denza.apps.feature.navigation.NavigationPhase
+import dev.denza.apps.feature.navigation.NavigationSettings
 import dev.denza.apps.feature.split.SplitScreenCoordinator
 import dev.denza.apps.feature.split.SplitScreenPhase
 import dev.denza.disharebridge.LocalAdbClient
@@ -35,6 +37,13 @@ data class SimulcastAppChoice(
     val selected: Boolean,
 )
 
+data class NavigationAppChoice(
+    val packageName: String,
+    val label: String,
+    val icon: Drawable?,
+    val selected: Boolean,
+)
+
 data class DenzaUiState(
     val simulcast: FeatureSnapshot = FeatureReducer.disabled(FeatureId.SIMULCAST),
     val mirrors: FeatureSnapshot = FeatureReducer.disabled(FeatureId.MIRRORS),
@@ -44,7 +53,11 @@ data class DenzaUiState(
         status = FeatureStatus.READY,
     ),
     val splitScreen: FeatureSnapshot = FeatureReducer.disabled(FeatureId.SPLIT_SCREEN),
-    val navigationButtonLabel: String = "Открыть Яндекс",
+    val navigationButtonLabel: String = "Открыть",
+    val navigationAutomatic: Boolean = false,
+    val navigationAppLabel: String = "Яндекс Навигатор",
+    val navigationAppChoices: List<NavigationAppChoice> = emptyList(),
+    val navigationPickerVisible: Boolean = false,
     val selectedAppCount: Int = 0,
     val selectedAppLabels: List<String> = emptyList(),
     val mirrorsPosition: MirrorsPosition = MirrorsPosition.SIDES,
@@ -97,6 +110,7 @@ object DenzaAppRepository {
         val desired = SimulcastIntegration.isEnabled(context)
         val snapshot = evaluateSimulcast(context, desired)
         val navigationSession = NavigationCoordinator.snapshot()
+        val navigationPackage = NavigationCoordinator.selectedPackage()
         val splitSession = SplitScreenCoordinator.snapshot()
         mutableState.value = mutableState.value.copy(
             simulcast = snapshot,
@@ -107,6 +121,9 @@ object DenzaAppRepository {
             mirrorsProcessing = MirrorsSettings.processingEnabled(context),
             navigation = navigationSnapshot(navigationSession.phase, navigationSession.message, navigationSession.details),
             navigationButtonLabel = navigationSession.buttonLabel,
+            navigationAutomatic = NavigationCoordinator.automaticEnabled(),
+            navigationAppLabel = NavigationAppPolicy.fallbackLabel(navigationPackage),
+            navigationAppChoices = navigationAppChoices(context, navigationPackage),
             splitScreen = splitScreenSnapshot(
                 splitSession.enabled,
                 splitSession.phase,
@@ -232,6 +249,31 @@ object DenzaAppRepository {
 
     fun performNavigationAction() {
         NavigationCoordinator.performPrimaryAction()
+    }
+
+    fun setNavigationAutomatic(enabled: Boolean) {
+        NavigationCoordinator.setAutomaticEnabled(enabled)
+    }
+
+    fun showNavigationAppPicker() {
+        val context = appContext ?: return
+        val selected = NavigationCoordinator.selectedPackage()
+        mutableState.value = mutableState.value.copy(
+            navigationAppChoices = navigationAppChoices(context, selected),
+            navigationPickerVisible = true,
+        )
+    }
+
+    fun hideNavigationAppPicker() {
+        mutableState.value = mutableState.value.copy(navigationPickerVisible = false)
+    }
+
+    fun selectNavigationApp(packageName: String) {
+        val context = appContext ?: return
+        if (!NavigationAppPolicy.isAllowed(packageName)) return
+        if (!NavigationSettings.isInstalled(context, packageName)) return
+        mutableState.value = mutableState.value.copy(navigationPickerVisible = false)
+        NavigationCoordinator.selectPackage(packageName)
     }
 
     fun setSplitScreenEnabled(enabled: Boolean) {
@@ -424,6 +466,20 @@ object DenzaAppRepository {
         message = message,
         details = details,
     )
+
+    private fun navigationAppChoices(
+        context: Context,
+        selectedPackage: String,
+    ): List<NavigationAppChoice> = NavigationSettings.installedApps(context).map { definition ->
+        NavigationAppChoice(
+            packageName = definition.packageName,
+            label = definition.fallbackLabel,
+            icon = runCatching {
+                context.packageManager.getApplicationIcon(definition.packageName)
+            }.getOrNull(),
+            selected = definition.packageName == selectedPackage,
+        )
+    }
 
     private fun blockingProblem(context: Context): String? {
         if (!isInstalled(context.packageManager, DISHARE_PACKAGE)) return "Simulcast не найден"

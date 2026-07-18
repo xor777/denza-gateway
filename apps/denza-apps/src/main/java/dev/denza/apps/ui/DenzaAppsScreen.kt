@@ -69,6 +69,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import dev.denza.apps.DenzaUiState
+import dev.denza.apps.NavigationAppChoice
 import dev.denza.apps.SimulcastAppChoice
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
@@ -99,6 +100,10 @@ fun DenzaAppsRoot(
     onMirrorsProcessing: (Boolean) -> Unit,
     onPreviewMirrors: () -> Unit,
     onNavigationAction: () -> Unit,
+    onNavigationAutomatic: (Boolean) -> Unit,
+    onChooseNavigationApp: () -> Unit,
+    onCloseNavigationPicker: () -> Unit,
+    onSelectNavigationApp: (String) -> Unit,
     onToggleSplitScreen: (Boolean) -> Unit,
     onSelectClusterDisplay: (Int?) -> Unit,
     onChooseApps: () -> Unit,
@@ -257,20 +262,53 @@ fun DenzaAppsRoot(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Outlined.Map,
                         title = "Навигация",
-                        subtitle = "Яндекс на приборке",
+                        subtitle = uiState.navigationAppLabel,
                         snapshot = uiState.navigation,
                     ) {
-                        Button(
-                            modifier = Modifier.fillMaxWidth(),
-                            onClick = onNavigationAction,
-                            enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                uiState.navigation.status != FeatureStatus.RECOVERING,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Accent,
-                                contentColor = Color(0xFF06251C),
-                            ),
-                        ) {
-                            Text(uiState.navigationButtonLabel, fontWeight = FontWeight.SemiBold)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column {
+                                    Text("Авто", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text("По режиму приборки", color = Muted, fontSize = 11.sp)
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Switch(
+                                    checked = uiState.navigationAutomatic,
+                                    onCheckedChange = onNavigationAutomatic,
+                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                        uiState.navigation.status != FeatureStatus.RECOVERING,
+                                )
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onChooseNavigationApp,
+                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                        uiState.navigation.status != FeatureStatus.RECOVERING &&
+                                        uiState.navigation.status != FeatureStatus.ACTIVE,
+                                ) {
+                                    Text("Выбрать", fontWeight = FontWeight.SemiBold)
+                                }
+                                Button(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onNavigationAction,
+                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                        uiState.navigation.status != FeatureStatus.RECOVERING,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Accent,
+                                        contentColor = Color(0xFF06251C),
+                                    ),
+                                ) {
+                                    Text(uiState.navigationButtonLabel, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                         }
                     }
                 }
@@ -321,6 +359,13 @@ fun DenzaAppsRoot(
             message = uiState.appPickerMessage,
             onToggle = onToggleApp,
             onDismiss = onCloseAppPicker,
+        )
+    }
+    if (uiState.navigationPickerVisible) {
+        NavigationPickerDialog(
+            apps = uiState.navigationAppChoices,
+            onSelect = onSelectNavigationApp,
+            onDismiss = onCloseNavigationPicker,
         )
     }
 }
@@ -486,6 +531,97 @@ private fun AppChoiceTile(app: SimulcastAppChoice, onClick: () -> Unit) {
                 app.label,
                 color = if (app.selected) Accent else Ink,
                 fontSize = 12.sp,
+                fontWeight = if (app.selected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 2,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NavigationPickerDialog(
+    apps: List<NavigationAppChoice>,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.68f),
+            color = SurfaceColor,
+            shape = RoundedCornerShape(26.dp),
+        ) {
+            Column(modifier = Modifier.padding(28.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column {
+                        Text(
+                            "Навигация на приборке",
+                            color = Ink,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text("Установленные приложения", color = Muted, fontSize = 14.sp)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("Закрыть") }
+                }
+                Spacer(Modifier.height(18.dp))
+                if (apps.isEmpty()) {
+                    Text("Поддерживаемые навигаторы не найдены", color = Warning, fontSize = 15.sp)
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(apps, key = { it.packageName }) { app ->
+                            NavigationChoiceTile(app = app) { onSelect(app.packageName) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavigationChoiceTile(app: NavigationAppChoice, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(18.dp)
+    val bitmap = remember(app.packageName, app.icon) {
+        app.icon?.toBitmap(128, 128)?.asImageBitmap()
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(116.dp)
+            .then(if (app.selected) Modifier.border(2.dp, Accent, shape) else Modifier)
+            .clickable(onClick = onClick),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Elevated),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (bitmap != null) {
+                Image(
+                    painter = BitmapPainter(bitmap),
+                    contentDescription = null,
+                    modifier = Modifier.size(54.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Icon(Icons.Outlined.Map, null, modifier = Modifier.size(50.dp), tint = Muted)
+            }
+            Spacer(Modifier.height(5.dp))
+            Text(
+                app.label,
+                color = if (app.selected) Accent else Ink,
+                fontSize = 13.sp,
                 fontWeight = if (app.selected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 2,
             )
@@ -678,7 +814,7 @@ private fun SupportDialog(
                     )
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        if (showTechnical) "Диагностика" else "Помощь",
+                        if (showTechnical) "Диагностика" else "Как пользоваться",
                         color = Ink,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -686,20 +822,35 @@ private fun SupportDialog(
                 }
                 Spacer(Modifier.height(22.dp))
                 if (!showTechnical) {
+                    Text(
+                        "Каждая карточка работает отдельно. Включайте только то, что нужно сейчас.",
+                        color = Muted,
+                    )
+                    Spacer(Modifier.height(18.dp))
                     HelpSection(
                         title = "Приложения на экранах",
-                        text = "Выберите до 6 приложений и нажмите «Запустить». Они появятся в меню Simulcast/DiShare.",
+                        text = "Нажмите «Выбрать», отметьте до шести приложений и затем «Запустить». Откроется штатное меню выбора экрана.",
                     )
                     HelpSection(
                         title = "Зеркала",
-                        text = "Выберите расположение камер. «Проверить камеры» покажет тестовую раскладку на приборке, тумблер сверху включит камеры поворотников.",
+                        text = "Включите тумблер — камеры будут появляться вместе с поворотниками. «Проверить камеры» показывает только их расположение.",
                     )
                     HelpSection(
                         title = "Навигация",
-                        text = "Сначала откройте Яндекс Навигатор, затем нажмите «На приборку».",
+                        text = "Выберите навигатор и нажмите «На приборку». С «Авто» он сам появляется в режиме Map и убирается при возврате в ADAS.",
+                    )
+                    HelpSection(
+                        title = "Разделённый экран",
+                        text = "Включите режим и запускайте приложения из штатного экрана с двумя окнами. Машина сохранит свой разделитель и управление окнами.",
                     )
                     Text(
-                        "Если карточка просит действие, подтвердите ADB-ключ на экране автомобиля и нажмите «Исправить».",
+                        "Важно: между левым и правым поворотником делайте короткую паузу.",
+                        color = Warning,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Если машина просит разрешить ADB, поставьте «Всегда разрешать» и нажмите «Разрешить».",
                         color = Muted,
                     )
                 } else {
@@ -753,7 +904,7 @@ private fun SupportDialog(
                             border = BorderStroke(1.dp, Accent),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Accent),
                         ) {
-                            Text("Открыть GitHub")
+                            Text("Проект и обратная связь")
                         }
                         Spacer(Modifier.width(10.dp))
                     }
