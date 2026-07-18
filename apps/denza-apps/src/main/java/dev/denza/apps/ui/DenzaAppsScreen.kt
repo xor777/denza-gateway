@@ -35,7 +35,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -53,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import dev.denza.apps.DenzaUiState
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
+import dev.denza.apps.feature.mirrors.MirrorsPosition
 import kotlinx.coroutines.flow.StateFlow
 
 private val Background = Color(0xFF080B0D)
@@ -69,6 +69,10 @@ fun DenzaAppsRoot(
     state: StateFlow<DenzaUiState>,
     onToggleSimulcast: (Boolean) -> Unit,
     onRepairSimulcast: () -> Unit,
+    onToggleMirrors: (Boolean) -> Unit,
+    onMirrorsPosition: (MirrorsPosition) -> Unit,
+    onMirrorsProcessing: (Boolean) -> Unit,
+    onPreviewMirrors: () -> Unit,
     onChooseApps: () -> Unit,
 ) {
     val uiState by state.collectAsState()
@@ -128,8 +132,34 @@ fun DenzaAppsRoot(
                         title = "Зеркала",
                         subtitle = "Камеры поворотников",
                         snapshot = uiState.mirrors,
+                        switchValue = uiState.mirrors.desiredEnabled,
+                        onSwitch = onToggleMirrors,
                     ) {
-                        Text("Подключение функции", color = Muted, fontSize = 14.sp)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                MirrorChoice(
+                                    text = "По сторонам",
+                                    selected = uiState.mirrorsPosition == MirrorsPosition.SIDES,
+                                    onClick = { onMirrorsPosition(MirrorsPosition.SIDES) },
+                                )
+                                MirrorChoice(
+                                    text = "По центру",
+                                    selected = uiState.mirrorsPosition == MirrorsPosition.CENTER,
+                                    onClick = { onMirrorsPosition(MirrorsPosition.CENTER) },
+                                )
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Обработка", color = Muted, fontSize = 14.sp)
+                                Spacer(Modifier.width(8.dp))
+                                Switch(
+                                    checked = uiState.mirrorsProcessing,
+                                    onCheckedChange = onMirrorsProcessing,
+                                )
+                                Spacer(Modifier.weight(1f))
+                                TextButton(onClick = onPreviewMirrors) { Text("Проверить") }
+                            }
+                        }
                     }
                     FeatureCard(
                         modifier = Modifier.weight(1f),
@@ -156,6 +186,18 @@ fun DenzaAppsRoot(
                 showTechnical = false
             },
         )
+    }
+}
+
+@Composable
+private fun MirrorChoice(text: String, selected: Boolean, onClick: () -> Unit) {
+    if (selected) {
+        Button(
+            onClick = onClick,
+            colors = ButtonDefaults.buttonColors(containerColor = Elevated, contentColor = Accent),
+        ) { Text(text, fontSize = 12.sp) }
+    } else {
+        OutlinedButton(onClick = onClick) { Text(text, fontSize = 12.sp) }
     }
 }
 

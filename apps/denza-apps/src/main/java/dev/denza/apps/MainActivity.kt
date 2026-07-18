@@ -18,6 +18,10 @@ class MainActivity : ComponentActivity() {
                     state = DenzaAppRepository.state,
                     onToggleSimulcast = DenzaAppRepository::setSimulcastEnabled,
                     onRepairSimulcast = DenzaAppRepository::repairSimulcast,
+                    onToggleMirrors = DenzaAppRepository::setMirrorsEnabled,
+                    onMirrorsPosition = DenzaAppRepository::setMirrorsPosition,
+                    onMirrorsProcessing = DenzaAppRepository::setMirrorsProcessing,
+                    onPreviewMirrors = DenzaAppRepository::previewMirrors,
                     onChooseApps = {
                         startActivity(Intent(this, AppPickerActivity::class.java))
                     },

@@ -8,6 +8,12 @@ import dev.denza.apps.core.FeatureId
 import dev.denza.apps.core.FeatureReducer
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
+import dev.denza.apps.feature.cluster.ClusterDisplayResolver
+import dev.denza.apps.feature.cluster.ClusterDisplaySelection
+import dev.denza.apps.feature.cluster.ClusterSceneService
+import dev.denza.apps.feature.mirrors.MirrorsPosition
+import dev.denza.apps.feature.mirrors.MirrorsSettings
+import dev.denza.apps.feature.mirrors.SideCameraMonitorService
 import dev.denza.disharebridge.LocalAdbClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +31,8 @@ data class DenzaUiState(
         message = "Готовится",
     ),
     val selectedAppCount: Int = 0,
+    val mirrorsPosition: MirrorsPosition = MirrorsPosition.SIDES,
+    val mirrorsProcessing: Boolean = true,
     val setupRunning: Boolean = false,
     val technicalDetails: String = "",
 )
@@ -47,6 +55,7 @@ object DenzaAppRepository {
         appContext = context.applicationContext
         refresh()
         reconcileSimulcast(repairMissingSetup = true)
+        if (MirrorsSettings.isEnabled(context)) reconcileMirrors()
     }
 
     fun refresh() {
@@ -55,7 +64,10 @@ object DenzaAppRepository {
         val snapshot = evaluateSimulcast(context, desired)
         mutableState.value = mutableState.value.copy(
             simulcast = snapshot,
+            mirrors = evaluateMirrors(context),
             selectedAppCount = SimulcastApps.selectedCount(context),
+            mirrorsPosition = MirrorsSettings.position(context),
+            mirrorsProcessing = MirrorsSettings.processingEnabled(context),
             technicalDetails = diagnostics(context),
         )
     }
@@ -77,6 +89,74 @@ object DenzaAppRepository {
 
     fun repairSimulcast() {
         reconcileSimulcast(repairMissingSetup = true, forceRepair = true)
+    }
+
+    fun setMirrorsEnabled(enabled: Boolean) {
+        val context = appContext ?: return
+        MirrorsSettings.setEnabled(context, enabled)
+        if (!enabled) {
+            SideCameraMonitorService.stop(context)
+            refresh()
+            return
+        }
+        mutableState.value = mutableState.value.copy(
+            mirrors = FeatureReducer.starting(FeatureId.MIRRORS),
+        )
+        reconcileMirrors()
+    }
+
+    fun setMirrorsPosition(position: MirrorsPosition) {
+        val context = appContext ?: return
+        MirrorsSettings.setPosition(context, position)
+        refresh()
+    }
+
+    fun setMirrorsProcessing(enabled: Boolean) {
+        val context = appContext ?: return
+        MirrorsSettings.setProcessingEnabled(context, enabled)
+        refresh()
+    }
+
+    fun previewMirrors() {
+        val context = appContext ?: return
+        when (ClusterDisplayResolver.resolve(context)) {
+            is ClusterDisplaySelection.Selected -> ClusterSceneService.preview(
+                context,
+                MirrorsSettings.position(context),
+                visible = true,
+                durationMs = 2_200L,
+            )
+            else -> refresh()
+        }
+    }
+
+    private fun reconcileMirrors() {
+        val context = appContext ?: return
+        if (!MirrorsSettings.isEnabled(context)) {
+            refresh()
+            return
+        }
+        when (ClusterDisplayResolver.resolve(context)) {
+            is ClusterDisplaySelection.Selected -> {
+                SideCameraMonitorService.start(context)
+                refresh()
+            }
+            is ClusterDisplaySelection.NeedsVerification -> mutableState.value =
+                mutableState.value.copy(
+                    mirrors = FeatureReducer.needsAction(
+                        FeatureReducer.starting(FeatureId.MIRRORS),
+                        "Выберите экран в разделе помощи",
+                    ),
+                    technicalDetails = diagnostics(context),
+                )
+            ClusterDisplaySelection.Missing -> mutableState.value = mutableState.value.copy(
+                mirrors = FeatureReducer.needsAction(
+                    FeatureReducer.starting(FeatureId.MIRRORS),
+                    "Приборный экран пока не найден",
+                ),
+                technicalDetails = diagnostics(context),
+            )
+        }
     }
 
     private fun reconcileSimulcast(
@@ -162,6 +242,24 @@ object DenzaAppRepository {
         )
     }
 
+    private fun evaluateMirrors(context: Context): FeatureSnapshot {
+        if (!MirrorsSettings.isEnabled(context)) return FeatureReducer.disabled(FeatureId.MIRRORS)
+        return when (ClusterDisplayResolver.resolve(context)) {
+            is ClusterDisplaySelection.Selected -> FeatureReducer.ready(
+                FeatureId.MIRRORS,
+                active = MirrorsSettings.observedSide(context) != null,
+            )
+            is ClusterDisplaySelection.NeedsVerification -> FeatureReducer.needsAction(
+                FeatureReducer.starting(FeatureId.MIRRORS),
+                "Нужно выбрать приборный экран",
+            )
+            ClusterDisplaySelection.Missing -> FeatureReducer.recovering(
+                FeatureReducer.starting(FeatureId.MIRRORS),
+                "Ищу приборный экран",
+            )
+        }
+    }
+
     private fun blockingProblem(context: Context): String? {
         if (!isInstalled(context.packageManager, DISHARE_PACKAGE)) return "Simulcast не найден"
         if (SimulcastApps.getSelected(context).isEmpty()) return "Выберите приложения"
@@ -213,7 +311,12 @@ object DenzaAppRepository {
         appendLine("DiShare installed=${isInstalled(context.packageManager, DISHARE_PACKAGE)}")
         appendLine("Overlay allowed=${hasOverlayPermission(context)}")
         appendLine("Accessibility enabled=${isAccessibilityEnabled(context)}")
-        append("Selected apps=${SimulcastApps.selectedCount(context)}")
+        appendLine("Selected apps=${SimulcastApps.selectedCount(context)}")
+        appendLine("Mirrors desired=${MirrorsSettings.isEnabled(context)}")
+        appendLine("Mirrors position=${MirrorsSettings.position(context)}")
+        appendLine("Mirrors processing=${MirrorsSettings.processingEnabled(context)}")
+        appendLine("Mirrors runtime=${MirrorsSettings.statusDetails(context)}")
+        append("Cluster selection=${ClusterDisplayResolver.resolve(context)}")
     }
 
     private fun isInstalled(packageManager: PackageManager, packageName: String): Boolean = try {
