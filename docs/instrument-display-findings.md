@@ -66,9 +66,13 @@ exposed.
 The persisted map placement has four live-switchable layouts on the verified
 `2560x720` instrument display:
 
-- **Full** uses the whole display at `272 dpi`, with the existing `90 dp` top
-  gradient peaking at 80 percent opacity; its bottom treatment is a `60 px`
-  transparent-to-black fade followed by `90 px` of solid black;
+- **Full** uses the whole display at `272 dpi`. Its shade leaves 5 percent map
+  visibility at the top center, fades fully clear by `272 px`, stays clear
+  through the middle, then fades back to black over `60 px` above a `90 px`
+  solid-black footer. Soft alpha cutouts expose the map in both top corners and
+  at bottom center: left/right top radii are `614/512 px`, their common depth is
+  `272 px`, and the bottom radius is `600 px` with its center `120 px` above the
+  lower edge;
 - **Center** uses `Rect(768, 0 - 1791, 720)` at `320 dpi`, with a stronger
   `130 dp` top gradient peaking at alpha `250`;
 - **Left** uses `Rect(0, 0 - 1023, 609)` at `272 dpi`, with an alpha-`250`
@@ -174,14 +178,14 @@ remained `14737`, the crash buffer was empty, and the user confirmed both
 directions worked well.
 
 The final selectable-layout build with SHA-256
-`ba453c9c1d8757cf9cb7a297c5641f319b21060a1c0f028ee367191ec07d9bb4`
+`7fbe9ff97c9775991fbade2c42d5e5d5b0a1920ddafc46facd1372d30b67cae1`
 was installed and accepted on 2026-07-19. Center, left, and right layouts were
 visually tuned on the car. A live left-to-right button switch recreated Yandex
 Navigator task `93` first on `1023x609` display `23`, then on `1023x509`
 display `24`, both at `272 dpi`, without a separate Return/Project action.
 These task and display IDs are evidence from that run, not product constants.
 The final left-gradient build rendered task `101` on `1023x609` display `28`.
-The final Full layout rendered task `107` on `2560x720` display `32` at
+The accepted Full shade rendered task `123` on `2560x720` display `40` at
 `272 dpi`. The AVC PID remained `14737` and the crash buffer stayed empty
 throughout.
 
@@ -189,8 +193,8 @@ Hardware-dependent behavior still awaiting acceptance:
 
 - N9 rear/overhead Simulcast receivers are implemented by contract but need
   `getScreens`, accessibility-tree, and one-receiver-at-a-time captures;
-- Mirror Center placement, processing off, manual preview, and camera-over-map behavior
-  must be repeated on the car;
+- Mirror Center placement, processing off, manual preview, and camera-over-map
+  behavior must be repeated on the car;
 - navigation command failure, lost ADB, and APK restart recovery require live
   testing;
 - fast left-to-right turn-signal switching is a confirmed crash path while
