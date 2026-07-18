@@ -114,12 +114,15 @@ data class ClusterMapLayout(
         ClusterMapPlacement.LEFT -> 192
         ClusterMapPlacement.RIGHT -> 0
     }
-    val shadeAlpha: Int = when (placement) {
+    val shadeTopAlpha: Int = when (placement) {
         ClusterMapPlacement.CENTER -> 250
         ClusterMapPlacement.FULL -> 204
         ClusterMapPlacement.LEFT -> 250
         ClusterMapPlacement.RIGHT -> 0
     }
+    val shadeBottomAlpha: Int = if (placement == ClusterMapPlacement.FULL) 255 else 0
+    val shadeBottomFadePx: Int = if (placement == ClusterMapPlacement.FULL) 60 else 0
+    val shadeBottomSolidPx: Int = if (placement == ClusterMapPlacement.FULL) 90 else 0
     val shadeCorner: ClusterShadeCorner? = when (placement) {
         ClusterMapPlacement.LEFT -> ClusterShadeCorner.TOP_RIGHT
         else -> null
@@ -127,7 +130,8 @@ data class ClusterMapLayout(
     val densityScalePercent: Int = when (placement) {
         ClusterMapPlacement.LEFT,
         ClusterMapPlacement.RIGHT,
+        ClusterMapPlacement.FULL,
         -> 85
-        else -> 100
+        ClusterMapPlacement.CENTER -> 100
     }
 }

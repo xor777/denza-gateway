@@ -370,7 +370,10 @@ class ClusterSceneService : Service() {
                 top = layout.shadeTop,
                 bottom = layout.shadeBottom,
                 heightDp = layout.shadeHeightDp,
-                alpha = layout.shadeAlpha,
+                topAlpha = layout.shadeTopAlpha,
+                bottomAlpha = layout.shadeBottomAlpha,
+                bottomFadePx = layout.shadeBottomFadePx,
+                bottomSolidPx = layout.shadeBottomSolidPx,
                 corner = layout.shadeCorner,
             )
             mapSurface.visibility = View.VISIBLE
@@ -480,7 +483,10 @@ class ClusterSceneService : Service() {
     private class ProjectionEdgeShadeView(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var fadeHeight = (90f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
-        private var shadeAlpha = 204
+        private var shadeTopAlpha = 204
+        private var shadeBottomAlpha = 204
+        private var shadeBottomFadePx = 0
+        private var shadeBottomSolidPx = 0
         private var shadeTop = true
         private var shadeBottom = true
         private var shadeCorner: ClusterShadeCorner? = null
@@ -489,38 +495,57 @@ class ClusterSceneService : Service() {
             top: Boolean,
             bottom: Boolean,
             heightDp: Int,
-            alpha: Int,
+            topAlpha: Int,
+            bottomAlpha: Int,
+            bottomFadePx: Int,
+            bottomSolidPx: Int,
             corner: ClusterShadeCorner?,
         ) {
             shadeTop = top
             shadeBottom = bottom
             shadeCorner = corner
             fadeHeight = (heightDp * resources.displayMetrics.density).toInt().coerceAtLeast(1)
-            shadeAlpha = alpha.coerceIn(0, 255)
+            shadeTopAlpha = topAlpha.coerceIn(0, 255)
+            shadeBottomAlpha = bottomAlpha.coerceIn(0, 255)
+            shadeBottomFadePx = bottomFadePx.coerceAtLeast(0)
+            shadeBottomSolidPx = bottomSolidPx.coerceAtLeast(0)
             invalidate()
         }
 
         override fun onDraw(canvas: Canvas) {
             val edge = fadeHeight.coerceAtMost(height)
-            val dark = Color.argb(shadeAlpha, 0, 0, 0)
             val clear = Color.TRANSPARENT
             if (shadeTop) {
+                val dark = Color.argb(shadeTopAlpha, 0, 0, 0)
                 paint.shader = LinearGradient(0f, 0f, 0f, edge.toFloat(), dark, clear, Shader.TileMode.CLAMP)
                 canvas.drawRect(0f, 0f, width.toFloat(), edge.toFloat(), paint)
             }
             if (shadeBottom) {
-                paint.shader = LinearGradient(
-                    0f,
-                    (height - edge).toFloat(),
-                    0f,
-                    height.toFloat(),
-                    clear,
-                    dark,
-                    Shader.TileMode.CLAMP,
-                )
-                canvas.drawRect(0f, (height - edge).toFloat(), width.toFloat(), height.toFloat(), paint)
+                val dark = Color.argb(shadeBottomAlpha, 0, 0, 0)
+                val solidHeight = shadeBottomSolidPx.coerceAtMost(height)
+                val fadeHeight = shadeBottomFadePx.coerceAtMost(height - solidHeight)
+                val fadeTop = height - solidHeight - fadeHeight
+                val solidTop = height - solidHeight
+                if (fadeHeight > 0) {
+                    paint.shader = LinearGradient(
+                        0f,
+                        fadeTop.toFloat(),
+                        0f,
+                        solidTop.toFloat(),
+                        clear,
+                        dark,
+                        Shader.TileMode.CLAMP,
+                    )
+                    canvas.drawRect(0f, fadeTop.toFloat(), width.toFloat(), solidTop.toFloat(), paint)
+                }
+                if (solidHeight > 0) {
+                    paint.shader = null
+                    paint.color = dark
+                    canvas.drawRect(0f, solidTop.toFloat(), width.toFloat(), height.toFloat(), paint)
+                }
             }
             shadeCorner?.let { corner ->
+                val dark = Color.argb(shadeTopAlpha, 0, 0, 0)
                 val centerX = if (corner == ClusterShadeCorner.TOP_LEFT) 0f else width.toFloat()
                 paint.shader = RadialGradient(
                     centerX,
