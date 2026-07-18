@@ -31,6 +31,7 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.Splitscreen
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -98,6 +99,7 @@ fun DenzaAppsRoot(
     onMirrorsProcessing: (Boolean) -> Unit,
     onPreviewMirrors: () -> Unit,
     onNavigationAction: () -> Unit,
+    onToggleSplitScreen: (Boolean) -> Unit,
     onSelectClusterDisplay: (Int?) -> Unit,
     onChooseApps: () -> Unit,
     onCloseAppPicker: () -> Unit,
@@ -272,6 +274,19 @@ fun DenzaAppsRoot(
                         }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                ) {
+                    SplitScreenCard(
+                        modifier = Modifier.weight(1f),
+                        snapshot = uiState.splitScreen,
+                        onToggle = onToggleSplitScreen,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.weight(1f))
+                }
                 Spacer(Modifier.weight(1f))
                 Footer(
                     state = uiState,
@@ -307,6 +322,73 @@ fun DenzaAppsRoot(
             onToggle = onToggleApp,
             onDismiss = onCloseAppPicker,
         )
+    }
+}
+
+@Composable
+private fun SplitScreenCard(
+    modifier: Modifier,
+    snapshot: FeatureSnapshot,
+    onToggle: (Boolean) -> Unit,
+) {
+    val enabled = snapshot.desiredEnabled
+    val subtitle = if (snapshot.status == FeatureStatus.ERROR) "Ошибка запуска" else "Управление окнами"
+    Card(
+        modifier = modifier.height(96.dp),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (enabled) SurfaceColor else DisabledSurface,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        if (enabled) Elevated else DisabledElevated,
+                        RoundedCornerShape(14.dp),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Outlined.Splitscreen,
+                    null,
+                    tint = if (enabled) Accent else DisabledInk,
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column {
+                Text(
+                    "Split screen",
+                    color = if (enabled) Ink else DisabledInk,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    subtitle,
+                    color = if (enabled) Muted else DisabledMuted,
+                    fontSize = 13.sp,
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (snapshot.status == FeatureStatus.STARTING || snapshot.status == FeatureStatus.RECOVERING) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = Warning,
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = onToggle,
+                enabled = snapshot.status != FeatureStatus.STARTING &&
+                    snapshot.status != FeatureStatus.RECOVERING,
+            )
+        }
     }
 }
 

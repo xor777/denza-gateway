@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
                     onMirrorsProcessing = DenzaAppRepository::setMirrorsProcessing,
                     onPreviewMirrors = DenzaAppRepository::previewMirrors,
                     onNavigationAction = DenzaAppRepository::performNavigationAction,
+                    onToggleSplitScreen = DenzaAppRepository::setSplitScreenEnabled,
                     onSelectClusterDisplay = DenzaAppRepository::selectClusterDisplay,
                     onChooseApps = DenzaAppRepository::showAppPicker,
                     onCloseAppPicker = DenzaAppRepository::hideAppPicker,
