@@ -11,7 +11,7 @@ may still use the historical `denza-gateway` directory name.
 | --- | --- | --- | --- |
 | `legacy/denza-gateway/` | `denza-gateway` | SSH gateway from the car LAN to local ADB endpoints on the head unit. | **Legacy.** Maintenance-only; do not add features. Car ADB Gateway supersedes it for new remote-access work. |
 | `apps/denza-mirrors/` | `denza-mirrors` | Original driver-display side-camera enlargement. | **Transition.** Hardware-verified reference kept buildable until the migrated Denza Apps path passes real-car acceptance. Product code lives in `dev.denza.mirrors`; research probes remain isolated in `dev.denza.mirrors.probe`. |
-| `apps/denza-apps/` | `denza-apps` | Consolidated head-unit app for Simulcast, side-camera mirrors, and Yandex instrument projection. | **Active.** Version `0.2.0`; Compose landscape shell, self-recovery, one display resolver, and one shared cluster scene. Isolated mirror cycles and Yandex projection/return are live-car verified; the known fast mirror-switch AVC crash remains. |
+| `apps/denza-apps/` | `denza-apps` | Consolidated head-unit app for Simulcast, side-camera mirrors, Yandex instrument projection, and stock IVI split routing. | **Active.** Version `0.2.0`; Compose landscape shell, self-recovery, one display resolver, and one shared cluster scene. Isolated mirror cycles, Yandex projection/return, and contextual stock split routing are live-car verified; the known fast mirror-switch AVC crash remains. |
 | `apps/car-adb-gateway/` | `car-adb-gateway` | Generic relay-only remote ADB gateway. Fixed `adbgw.ru`, one trusted computer, background recovery, no LAN listener. | Product candidate. Local unit/build evidence and the verified relay deployment exist; live-head-unit E2E, API matrix, and soak remain required. |
 
 ## Shared Android Modules
@@ -118,7 +118,7 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 
 | Component | Status |
 | --- | --- |
-| `MainActivity`, `ui/DenzaAppsScreen` | Landscape-first Compose shell with three independent feature cards and no global Start/Stop. Technical diagnostics are hidden behind Support. |
+| `MainActivity`, `ui/DenzaAppsScreen` | Landscape-first Compose shell with three primary feature cards, one compact Split screen card, and no global Start/Stop. Technical diagnostics are hidden behind Support. |
 | `DenzaAppRepository`, `core/FeatureModels`, `DenzaRuntimeCoordinator` | Separate desired/observed feature state, short user-facing status, boot/package-update recovery, and detailed Support diagnostics. |
 | Compose app picker | In-window horizontal list of installed apps; tap to mark up to 6 for casting. Defaults to the installed subset of VK Video / Rutube / Kinopoisk / Yandex Navi / VLC / YouTube. |
 | `SimulcastApps` | Persists the chosen casting packages (prefs) and seeds defaults. |
@@ -129,6 +129,7 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 | `feature.cluster` | Fail-closed cluster display resolver, real-display geometry, and the shared map-base/camera-overlay scene. No fallback display IDs. |
 | `feature.mirrors` | Migrated AVC renderer and window monitor. Uses the shared local ADB client, keeps verified Mirrors geometry/image treatment, and has no probe dependency. |
 | `feature.navigation` | App-owned virtual display plus fixed-operation, one-shot shell task commands and a memory-only Yandex session. Projection and return are live-car verified; no arbitrary shell execution is exposed. |
+| `feature.split` | Contextual router for the stock BYD `byd-freeform` roots. Normal launches stay fullscreen; launches originating from the visible stock split scene are assigned to allowlisted left/right panes through fixed local-ADB commands. |
 
 ### `libraries/dishare-bridge/`
 
@@ -149,8 +150,8 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 - `car-adb-gateway` is the active generic relay-only connectivity app. It must
   not grow a LAN mode.
 - `denza-apps` is the single active Denza feature app. Simulcast, migrated camera
-  rendering, and Yandex task projection have separate feature packages but share
-  desired/observed state, recovery, and the instrument-display scene.
+  rendering, Yandex task projection, and contextual stock split routing have
+  separate feature packages but share desired/observed state and recovery.
 - `denza-mirrors` is in transition. Use it as the hardware-verified comparison
   point while testing the migrated camera path; do not grow it as a separate
   product.

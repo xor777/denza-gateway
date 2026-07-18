@@ -71,6 +71,30 @@ or missing task releases the map surface and enters recovery; releasing the
 virtual display is the final fallback that lets Android return its task to the
 default display.
 
+## Central IVI split routing
+
+The central screen's split mode is the stock BYD `byd-freeform` scene, not a
+Denza Apps overlay. On the tested firmware it contains a large left root
+anchored by `com.android.launcher3` at `Rect(24, 112 - 1680, 1472)` and a small
+right root anchored by `com.byd.launchermap` at
+`Rect(1704, 112 - 2536, 1472)`. Root and task IDs are runtime state and are not
+hard-coded.
+
+The compact **Split screen** switch enables contextual routing through the
+shared local ADB client. Normal launches outside the stock split scene remain
+fullscreen. While both stock roots are visible, Yandex Navigator is assigned
+to the large left root, while Yandex Music and Apple Music are assigned to the
+small right root. The stock launcher initially starts these third-party apps as
+fullscreen tasks even when their icon is tapped inside the split scene; the
+router recognizes that immediate split-to-fullscreen transition, reparents the
+task with fixed `am stack move-task` and `am task resize` commands, and leaves
+the stock divider and controls in charge.
+
+Turning the switch off moves supported tasks back to the fullscreen root that
+contains Denza Apps and restores the stock launcher/map anchors. No app is
+started by toggling the switch, and the card intentionally does not expose the
+package rules in its text.
+
 ## OpenBYD research boundary
 
 The locally inspected APK is `com.sr.openbyd`, version `1.0` (version code `1`),
@@ -99,6 +123,16 @@ and rendered visibly on the instrument panel. **Return** moved it back to
 display `0`; Android then restored its `2560x1600` bounds and removed the
 virtual display. The task was projected again after installing the gradient
 build. The AVC PID remained `14737` and the crash buffer stayed empty.
+
+The central split build with SHA-256
+`05db25a5d7b22eef04ecccc30568ac0f656a728b77638ec17a4c9faed7b9662f`
+was then installed. A normal Yandex Navigator launch stayed fullscreen. From
+the visible stock split launcher, Navigator task `37` was routed to the large
+left root and Yandex Music task `47` to the small right root; both rendered at
+the same time under the stock divider. Switching the feature off moved both
+tasks back to the fullscreen root, and switching it on again succeeded without
+launching either app. The AVC PID remained `14737`, and the post-fix crash
+buffer was empty.
 
 Hardware-dependent behavior still awaiting acceptance:
 

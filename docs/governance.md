@@ -130,6 +130,21 @@ package into product code):
   together. Retire the old module only after real-car acceptance in a separate
   commit.
 
+## IVI Split-Screen Rules
+
+- Use the stock BYD split roots and divider; do not draw a replacement split UI
+  over the central screen.
+- Resolve panes from the `com.android.launcher3` and `com.byd.launchermap`
+  anchors and their live bounds. Root/task IDs are observations, never constants.
+- A normal launch outside the visible stock split scene must remain fullscreen.
+  Route only the immediate launch context that originated from the stock split
+  scene.
+- Keep the package-to-pane mapping allowlisted and internal. Split commands are
+  fixed `am stack move-task` / `am task resize` operations through the shared
+  local ADB client; do not expose arbitrary shell text to the UI.
+- Toggling the feature must not launch an app. Turning it off must return routed
+  tasks to the current fullscreen root and restore the stock pane anchors.
+
 ## Git Hygiene
 
 - Keep unrelated product changes and research changes in separate commits.
