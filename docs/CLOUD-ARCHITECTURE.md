@@ -1,8 +1,9 @@
 # Car ADB Gateway — Relay-Only Architecture v3
 
 Status: normative description of the implementation in this repository. Updated
-2026-07-18. This relay version has not been deployed yet; live end-to-end and
-soak verification remain mandatory before production use.
+2026-07-18. This relay version was deployed to `adbgw.ru` and passed the live
+Ansible verification; head-unit end-to-end and soak verification remain
+mandatory before production use.
 
 Car ADB Gateway is a standalone, vehicle-agnostic Android app for head units
 where ADB is available locally. It can be installed alongside the existing
@@ -260,7 +261,7 @@ free local port and runs `adb connect`.
 
 ## 8. Verification Status
 
-Completed locally on 2026-07-18:
+Completed locally and on `adbgw.ru` on 2026-07-18:
 
 - relay unit tests for TTL, source lockout, idempotent enrollment, pending
   rollback, two-phase replacement, and persistent disable;
@@ -269,12 +270,16 @@ Completed locally on 2026-07-18:
 - Android unit tests for the state reducer, backoff, endpoint plan, and relay
   protocol;
 - debug APK build with minSdk 26 and targetSdk 36, plus Android lint with no
-  errors.
+  errors;
+- Ansible relay deployment and live verification of restricted accounts,
+  direction-specific forwarding, root-owned control-plane files, locked account
+  states, port 22/443 listener separation, UFW, NTP, DNS, and the pinned host
+  key;
+- negative SSH checks proving that unregistered service keys are rejected and
+  that the administrator cannot open a shell on the application listener.
 
 Required before production:
 
-- deploy the new Ansible role and run negative SSH integration tests on the
-  relay;
 - complete relay → CLI → inner SSH → real ADB end-to-end verification;
 - verify API levels 26, 31, 34, 35, and 36;
 - test installation and ADB approval, reboot, sleep/wake, network switching,

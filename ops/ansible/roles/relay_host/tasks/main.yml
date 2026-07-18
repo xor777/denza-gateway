@@ -30,7 +30,7 @@
     shell: /bin/bash
     system: true
     create_home: true
-    password_lock: true
+    password_lock: "{{ item not in relay_host_pam_accounts }}"
   loop: "{{ relay_host_service_accounts }}"
 
 - name: Give PAM-only accounts an unguessable unlocked shadow hash

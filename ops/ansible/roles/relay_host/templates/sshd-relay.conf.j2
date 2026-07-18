@@ -5,6 +5,14 @@ GatewayPorts no
 AuthorizedKeysCommand {{ relay_host_root }}/authorized-keys.sh %u
 AuthorizedKeysCommandUser cag-authkeys
 
+Match LocalPort {{ relay_host_admin_ssh_port }}
+    AllowUsers {{ admin_user }}
+
+Match LocalPort {{ relay_host_ssh_port }}
+    AllowUsers cag-device cag-client cag-enroll cag-pair cag-control
+
+Match all
+
 Match User cag-device
     PasswordAuthentication no
     KbdInteractiveAuthentication no

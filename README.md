@@ -152,6 +152,109 @@ The relay must be deployed through [`ops/ansible/`](ops/ansible/), not by
 copying scripts manually. This keeps SSH, PAM, account, filesystem, and
 verification rules consistent.
 
+## Car ADB Gateway field guide
+
+Car ADB Gateway uses two different short-lived codes:
+
+| Code | Created by | Used for | Lifetime |
+| --- | --- | --- | --- |
+| Enrollment code | Relay administrator | Register one fresh APK installation with the relay. | 60 minutes |
+| Pairing code | A person at the enrolled head unit | Connect or replace the one trusted computer. | 10 minutes |
+
+Share either code only with the person who is setting up or operating the
+vehicle. A pairing code grants full remote ADB access after the vehicle confirms
+the computer.
+
+### 1. Install or update the APK
+
+Build from the repository root, then use the serial shown by `adb devices -l`:
+
+```bash
+./gradlew :car-adb-gateway:assembleDebug
+adb devices -l
+adb -s <serial> install -r apps/car-adb-gateway/build/outputs/apk/debug/car-adb-gateway.apk
+adb -s <serial> shell am start -n ru.adbgw.gateway/.MainActivity
+```
+
+Keep `-r` when updating an enrolled installation so its private keys and relay
+identity remain intact. Uninstalling the APK removes that state and requires a
+new enrollment code.
+
+### 2. Enroll the vehicle once
+
+1. Open Car ADB Gateway on the head unit.
+2. If Android shows an ADB authorization dialog, approve the app key and press
+   **«Проверить снова»**.
+3. Ask the relay administrator for a current enrollment code. Administrators
+   create it using the procedure in [`ops/ansible/README.md`](ops/ansible/README.md).
+4. Enter the code, press **«Подключить автомобиль»**, read the full-access
+   warning, and confirm.
+5. Wait until the main screen reports that the vehicle is connected to the
+   relay. The **«Поддержка»** dialog shows the relay, device ID, ADB endpoint,
+   connection state, and recent events when diagnosis is needed.
+
+### 3. Pair or replace the trusted computer
+
+The computer needs the `cag` CLI, OpenSSH, and Android Platform Tools on `PATH`.
+Build/install instructions are in [`platform/cli/README.md`](platform/cli/README.md).
+
+1. On the head unit, press **«Подключить компьютер»** or
+   **«Заменить компьютер»**.
+2. Read the warning and press **«Показать код»**.
+3. On the trusted computer, run the displayed command before the code expires:
+
+   ```bash
+   cag pair XXXX-XXXX
+   ```
+
+4. Wait for `Paired with ...`. A successful replacement revokes the previous
+   computer. If replacement fails or expires, the previous computer keeps its
+   access.
+
+### 4. Use ADB remotely
+
+`cag` opens the protected tunnel and selects the correct smart-socket or raw-ADB
+mode automatically:
+
+```bash
+cag connect -- adb devices
+cag connect -- adb shell
+cag status
+```
+
+Use the same prefix for other ADB commands, for example:
+
+```bash
+cag connect -- adb shell getprop ro.build.version.release
+cag connect -- adb logcat
+```
+
+Some raw-ADB head units show a second Android authorization dialog for the
+computer's normal ADB key. Approve it at the vehicle before retrying the command.
+
+### 5. Disconnect safely
+
+- `cag disconnect` closes only this computer's local tunnel. It does not disable
+  remote access on the vehicle.
+- **«Отключить удалённый доступ»** in the vehicle app closes current sessions,
+  disables the relay grant, and keeps access disabled after reboot.
+- **«Включить удалённый доступ»** in the vehicle app explicitly enables it again.
+
+### Quick diagnosis
+
+- `no car is paired` — create a fresh pairing code at the vehicle and run
+  `cag pair`.
+- Pairing code rejected — create another code; pairing codes expire after ten
+  minutes.
+- Enrollment code rejected — ask the relay administrator for another code;
+  enrollment codes expire after 60 minutes and are single-use.
+- Vehicle is reconnecting — check network access and the **«Поддержка»** events;
+  transient network, relay, and ADB failures are retried automatically.
+- App was force-stopped — open Car ADB Gateway manually. Android does not allow
+  an ordinary APK to restart itself after Force Stop.
+- Identity or host-key error — stop and inspect the support details. Identity
+  mismatches fail closed and must not be bypassed.
+
 ## Documentation
 
 - [Project map](docs/project-map.md) — component boundaries, lifecycle, and build outputs.

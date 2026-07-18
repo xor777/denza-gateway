@@ -21,6 +21,12 @@ python3 -m venv .venv-ansible
 Repeated runs are safe and converge the server to the configuration in this
 repository.
 
+Ansible owns the reproducible server boundary: packages, accounts, control-plane
+files, PAM, SSH, firewall, and verification. It only initializes
+`/opt/cag/state/state.json` when the file is absent; invite codes, enrolled
+vehicles, pairing requests, and grants remain mutable runtime state managed by
+`cag-state` and are never replaced by a playbook rerun.
+
 After configuration, create a single-use invite code. Its default lifetime is
 60 minutes:
 

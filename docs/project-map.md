@@ -12,7 +12,7 @@ may still use the historical `denza-gateway` directory name.
 | `legacy/denza-gateway/` | `denza-gateway` | SSH gateway from the car LAN to local ADB endpoints on the head unit. | **Legacy.** Maintenance-only; do not add features. Car ADB Gateway supersedes it for new remote-access work. |
 | `apps/denza-mirrors/` | `denza-mirrors` | Original driver-display side-camera enlargement. | **Transition.** Hardware-verified reference kept buildable until the migrated Denza Apps path passes real-car acceptance. Product code lives in `dev.denza.mirrors`; research probes remain isolated in `dev.denza.mirrors.probe`. |
 | `apps/denza-apps/` | `denza-apps` | Consolidated head-unit app for Simulcast, side-camera mirrors, and Yandex instrument projection. | **Active.** Version `0.2.0`; Compose landscape shell, self-recovery, one display resolver, and one shared cluster scene. Mirrors and navigation code are locally verified but still require live-car acceptance. |
-| `apps/car-adb-gateway/` | `car-adb-gateway` | Generic relay-only remote ADB gateway. Fixed `adbgw.ru`, one trusted computer, background recovery, no LAN listener. | Product candidate. Local unit/build evidence exists; relay deployment, live-head-unit E2E, API matrix, and soak remain required. |
+| `apps/car-adb-gateway/` | `car-adb-gateway` | Generic relay-only remote ADB gateway. Fixed `adbgw.ru`, one trusted computer, background recovery, no LAN listener. | Product candidate. Local unit/build evidence and the verified relay deployment exist; live-head-unit E2E, API matrix, and soak remain required. |
 
 ## Shared Android Modules
 
@@ -91,7 +91,7 @@ the relevant probes into a dedicated experiment module rather than overloading
 
 | Component | Status |
 | --- | --- |
-| `platform/relay/cag_state.py` + wrappers | Atomic state, expiring codes, source lockout, device enrollment, pending/commit replacement, dynamic restricted keys. Provisioning not yet deployed. |
+| `platform/relay/cag_state.py` + wrappers | Atomic state, expiring codes, source lockout, device enrollment, pending/commit replacement, dynamic restricted keys. Provisioned on `adbgw.ru` through Ansible and live-verified on 2026-07-18. |
 | `platform/cli/cmd/cag` | Go client for `pair`, `connect`, ADB execution, `status`, and `disconnect`; Darwin/Linux builds verified locally. |
 
 ### `apps/denza-mirrors/` (`denza-mirrors`)

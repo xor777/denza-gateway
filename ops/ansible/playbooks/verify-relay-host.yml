@@ -11,7 +11,7 @@
           - /usr/sbin/sshd
           - -T
           - -C
-          - user=cag-device,addr=127.0.0.1,host=localhost
+          - user=cag-device,addr=127.0.0.1,host=localhost,lport={{ relay_host_ssh_port }}
       register: relay_verify_device_sshd
       changed_when: false
 
@@ -21,7 +21,7 @@
           - /usr/sbin/sshd
           - -T
           - -C
-          - user=cag-client,addr=127.0.0.1,host=localhost
+          - user=cag-client,addr=127.0.0.1,host=localhost,lport={{ relay_host_ssh_port }}
       register: relay_verify_client_sshd
       changed_when: false
 
@@ -31,7 +31,7 @@
           - /usr/sbin/sshd
           - -T
           - -C
-          - user=cag-enroll,addr=127.0.0.1,host=localhost
+          - user=cag-enroll,addr=127.0.0.1,host=localhost,lport={{ relay_host_ssh_port }}
       register: relay_verify_enroll_sshd
       changed_when: false
 
@@ -41,7 +41,7 @@
           - /usr/sbin/sshd
           - -T
           - -C
-          - user=cag-pair,addr=127.0.0.1,host=localhost
+          - user=cag-pair,addr=127.0.0.1,host=localhost,lport={{ relay_host_ssh_port }}
       register: relay_verify_pair_sshd
       changed_when: false
 
@@ -51,8 +51,38 @@
           - /usr/sbin/sshd
           - -T
           - -C
-          - user=cag-control,addr=127.0.0.1,host=localhost
+          - user=cag-control,addr=127.0.0.1,host=localhost,lport={{ relay_host_ssh_port }}
       register: relay_verify_control_sshd
+      changed_when: false
+
+    - name: Read effective admin-port settings for the admin account
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+          - -C
+          - user={{ admin_user }},addr=127.0.0.1,host=localhost,lport={{ relay_host_admin_ssh_port }}
+      register: relay_verify_admin_sshd
+      changed_when: false
+
+    - name: Read effective relay-port settings for the admin account
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+          - -C
+          - user={{ admin_user }},addr=127.0.0.1,host=localhost,lport={{ relay_host_ssh_port }}
+      register: relay_verify_admin_on_relay_sshd
+      changed_when: false
+
+    - name: Read effective admin-port settings for a relay account
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+          - -C
+          - user=cag-device,addr=127.0.0.1,host=localhost,lport={{ relay_host_admin_ssh_port }}
+      register: relay_verify_device_on_admin_sshd
       changed_when: false
 
     - name: Require direction-specific forwarding restrictions
@@ -68,6 +98,11 @@
           - "'allowstreamlocalforwarding no' in relay_verify_client_sshd.stdout"
           - "'permitopen 127.0.0.1:*' in relay_verify_client_sshd.stdout"
           - "'forcecommand /bin/false' in relay_verify_client_sshd.stdout"
+          - "'allowusers cag-device' in relay_verify_device_sshd.stdout"
+          - "'allowusers cag-client' in relay_verify_device_sshd.stdout"
+          - "'allowusers cag-enroll' in relay_verify_device_sshd.stdout"
+          - "'allowusers cag-pair' in relay_verify_device_sshd.stdout"
+          - "'allowusers cag-control' in relay_verify_device_sshd.stdout"
           - "'allowtcpforwarding no' in relay_verify_enroll_sshd.stdout"
           - "'passwordauthentication yes' in relay_verify_enroll_sshd.stdout"
           - "'forcecommand /opt/cag/enroll.sh' in relay_verify_enroll_sshd.stdout"
@@ -77,6 +112,13 @@
           - "'allowtcpforwarding no' in relay_verify_control_sshd.stdout"
           - "'pubkeyauthentication yes' in relay_verify_control_sshd.stdout"
           - "'authorizedkeyscommand /opt/cag/authorized-keys.sh %u' in relay_verify_control_sshd.stdout"
+          - "('allowusers ' ~ admin_user) in relay_verify_admin_sshd.stdout"
+          - "'allowusers cag-device' in relay_verify_admin_on_relay_sshd.stdout"
+          - "'allowusers cag-client' in relay_verify_admin_on_relay_sshd.stdout"
+          - "'allowusers cag-enroll' in relay_verify_admin_on_relay_sshd.stdout"
+          - "'allowusers cag-pair' in relay_verify_admin_on_relay_sshd.stdout"
+          - "'allowusers cag-control' in relay_verify_admin_on_relay_sshd.stdout"
+          - "('allowusers ' ~ admin_user) in relay_verify_device_on_admin_sshd.stdout"
 
     - name: Verify relay control-plane files
       ansible.builtin.stat:
