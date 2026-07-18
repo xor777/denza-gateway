@@ -3,8 +3,15 @@ package dev.denza.apps;
 import android.graphics.Rect;
 import android.view.accessibility.AccessibilityNodeInfo;
 
+import dev.denza.apps.feature.simulcast.ScreenTarget;
+
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Live geometry of the native DiShare {@code ShareDialogActivity}, read from the
@@ -15,8 +22,8 @@ import java.util.List;
  * families.
  *
  * Node ids captured from the live dialog:
- * {@code central_screen} (source preview), {@code ar_hud_screen},
- * {@code fse_screen}, {@code app_list} + {@code app_icon} (only after App Change),
+ * {@code central_screen} (source preview), all receiver cards described by
+ * {@link ScreenTarget}, {@code app_list} + {@code app_icon} (only after App Change),
  * {@code switch_share_app} (App Change button), {@code close}.
  */
 final class SimulcastDialogGeometry {
@@ -24,8 +31,7 @@ final class SimulcastDialogGeometry {
 
     final Rect dialog;
     final Rect central;
-    final Rect hud;
-    final Rect fse;
+    final Map<String, Rect> receivers;
     final Rect appChangeButton;
     final Rect close;
     /** Bounds of the native row container (RecyclerView). Null unless App Change is open. */
@@ -33,12 +39,11 @@ final class SimulcastDialogGeometry {
     /** Per-slot bounds of the native app row, left-to-right. Empty unless App Change is open. */
     final List<Rect> appSlots;
 
-    private SimulcastDialogGeometry(Rect dialog, Rect central, Rect hud, Rect fse,
+    private SimulcastDialogGeometry(Rect dialog, Rect central, Map<String, Rect> receivers,
             Rect appChangeButton, Rect close, Rect appList, List<Rect> appSlots) {
         this.dialog = dialog;
         this.central = central;
-        this.hud = hud;
-        this.fse = fse;
+        this.receivers = receivers;
         this.appChangeButton = appChangeButton;
         this.close = close;
         this.appList = appList;
@@ -65,8 +70,7 @@ final class SimulcastDialogGeometry {
         return other != null
                 && equalRect(dialog, other.dialog)
                 && equalRect(central, other.central)
-                && equalRect(hud, other.hud)
-                && equalRect(fse, other.fse)
+                && receivers.equals(other.receivers)
                 && equalRect(appChangeButton, other.appChangeButton)
                 && equalRect(close, other.close)
                 && equalRect(appList, other.appList);
@@ -80,14 +84,40 @@ final class SimulcastDialogGeometry {
      * Receiver id for a drop point, or null if it is not over a projectable screen.
      * {@code central} is the local/source screen and is intentionally not a target.
      */
-    String receiverAt(float x, float y) {
-        if (hud != null && hud.contains((int) x, (int) y)) {
-            return "screen_hud";
+    String receiverAt(float x, float y, Set<String> availableReceivers) {
+        if (availableReceivers == null || availableReceivers.isEmpty()) {
+            return null;
         }
-        if (fse != null && fse.contains((int) x, (int) y)) {
-            return "screen_fse";
+        for (Map.Entry<String, Rect> entry : receivers.entrySet()) {
+            if (availableReceivers.contains(entry.getKey())
+                    && entry.getValue().contains((int) x, (int) y)) {
+                return entry.getKey();
+            }
         }
         return null;
+    }
+
+    Map<String, Rect> availableReceiverBounds(Set<String> availableReceivers) {
+        if (availableReceivers == null || availableReceivers.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        LinkedHashMap<String, Rect> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Rect> entry : receivers.entrySet()) {
+            if (availableReceivers.contains(entry.getKey())) {
+                result.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return Collections.unmodifiableMap(result);
+    }
+
+    Set<String> visibleViewResourceNames() {
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (ScreenTarget target : ScreenTarget.SUPPORTED) {
+            if (receivers.containsKey(target.receiverId)) {
+                result.add(target.viewResourceName);
+            }
+        }
+        return Collections.unmodifiableSet(result);
     }
 
     static SimulcastDialogGeometry from(AccessibilityNodeInfo root) {
@@ -107,11 +137,17 @@ final class SimulcastDialogGeometry {
         if (appList == null && appChangeButton != null) {
             appList = appListFromButton(appChangeButton);
         }
+        LinkedHashMap<String, Rect> receivers = new LinkedHashMap<>();
+        for (ScreenTarget target : ScreenTarget.SUPPORTED) {
+            Rect bounds = nodeBounds(root, target.viewResourceName);
+            if (bounds != null) {
+                receivers.put(target.receiverId, bounds);
+            }
+        }
         return new SimulcastDialogGeometry(
                 dialog,
                 nodeBounds(root, "central_screen"),
-                nodeBounds(root, "ar_hud_screen"),
-                nodeBounds(root, "fse_screen"),
+                Collections.unmodifiableMap(receivers),
                 appChangeButton,
                 nodeBounds(root, "close"),
                 appList,
@@ -160,8 +196,8 @@ final class SimulcastDialogGeometry {
 
     @Override
     public String toString() {
-        return "Geometry{dialog=" + dialog + ", central=" + central + ", hud=" + hud
-                + ", fse=" + fse + ", appChange=" + appChangeButton
+        return "Geometry{dialog=" + dialog + ", central=" + central
+                + ", receivers=" + receivers + ", appChange=" + appChangeButton
                 + ", slots=" + appSlots.size() + '}';
     }
 }

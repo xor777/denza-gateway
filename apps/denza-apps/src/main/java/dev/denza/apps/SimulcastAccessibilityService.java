@@ -22,10 +22,15 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
+import dev.denza.disharebridge.DiShareScreens;
+
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Seamless Simulcast overlay driven by accessibility. Watches the native
@@ -65,6 +70,8 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     private static final float ICON_DP = 64f;
     private static final float GAP_DP = 12f;
     private static final float DRAG_SLOP_DP = 12f;
+    private static final long SCREEN_QUERY_RETRY_MS = 2000L;
+    private static final long SCREEN_QUERY_REFRESH_MS = 30000L;
     private static final int ICON_FALLBACK_BG = Color.rgb(0x26, 0x32, 0x40);
 
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -84,6 +91,12 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     private Rect eraseBounds;
     private Rect centralIconBounds;
     private Target selectedTarget;
+    private Set<String> availableReceivers = Collections.emptySet();
+    private boolean screenAvailabilityConfirmed;
+    private boolean screenQueryRunning;
+    private long lastScreenQueryMs;
+    private int screenGeneration;
+    private int appliedScreenGeneration = -1;
 
     // Gesture state shared between input windows and the painter.
     private boolean dragging;
@@ -160,17 +173,70 @@ public class SimulcastAccessibilityService extends AccessibilityService {
             tearDown();
             return;
         }
+        boolean newDialog = geometry == null && drawView == null;
+        if (newDialog) {
+            availableReceivers = Collections.emptySet();
+            screenAvailabilityConfirmed = false;
+            lastScreenQueryMs = 0L;
+            screenGeneration++;
+        }
+        ensureScreenAvailability();
         // Ignore events from our own overlay windows / native row scrolling: only
         // re-apply when the dialog's stable geometry actually changed.
-        if (drawView != null && geo.sameAs(geometry)) {
+        boolean geometryChanged = !geo.sameAs(geometry);
+        if (drawView != null && !geometryChanged
+                && appliedScreenGeneration == screenGeneration) {
             return;
         }
         geometry = geo;
-        rebuild(geo);
-        layoutInputWindows();
+        if (geometryChanged || drawView == null) {
+            rebuild(geo);
+            layoutInputWindows();
+        }
+        appliedScreenGeneration = screenGeneration;
         if (drawView != null) {
             drawView.invalidate();
         }
+    }
+
+    private void ensureScreenAvailability() {
+        long now = System.currentTimeMillis();
+        long minimumDelay = screenAvailabilityConfirmed
+                ? SCREEN_QUERY_REFRESH_MS : SCREEN_QUERY_RETRY_MS;
+        if (screenQueryRunning || now - lastScreenQueryMs < minimumDelay) {
+            return;
+        }
+        screenQueryRunning = true;
+        lastScreenQueryMs = now;
+        DiShareScreens.query(this, DISHARE_PKG, new DiShareScreens.Callback() {
+            @Override
+            public void onScreens(List<DiShareScreens.Screen> screens) {
+                HashSet<String> ids = new HashSet<>();
+                for (DiShareScreens.Screen screen : screens) {
+                    if (screen.available && screen.screenId != null) {
+                        ids.add(screen.screenId);
+                    }
+                }
+                availableReceivers = Collections.unmodifiableSet(ids);
+                screenAvailabilityConfirmed = true;
+                screenQueryRunning = false;
+                screenGeneration++;
+                Log.i(TAG, "available receivers=" + availableReceivers);
+                scheduleRefresh();
+            }
+
+            @Override
+            public void onFailed(String message) {
+                screenQueryRunning = false;
+                if (!screenAvailabilityConfirmed) {
+                    availableReceivers = Collections.emptySet();
+                }
+                screenGeneration++;
+                Log.w(TAG, "screen query failed " + message);
+                handler.removeCallbacks(refreshRunnable);
+                handler.postDelayed(refreshRunnable, SCREEN_QUERY_RETRY_MS);
+            }
+        });
     }
 
     private AccessibilityNodeInfo findDiShareRoot() {
@@ -436,13 +502,15 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         }
         dragX = rawX;
         dragY = rawY;
-        hoverReceiver = geometry == null ? null : geometry.receiverAt(rawX, rawY);
+        hoverReceiver = geometry == null ? null
+                : geometry.receiverAt(rawX, rawY, availableReceivers);
         invalidateOverlayViews();
     }
 
     private void onUp(float rawX, float rawY) {
         if (dragging) {
-            String receiver = geometry == null ? null : geometry.receiverAt(rawX, rawY);
+            String receiver = geometry == null ? null
+                    : geometry.receiverAt(rawX, rawY, availableReceivers);
             Target target = dragTarget;
             cancelDrag();
             if (receiver != null && target != null) {
@@ -573,8 +641,13 @@ public class SimulcastAccessibilityService extends AccessibilityService {
             super.onDraw(canvas);
             // Drop-zone hints while dragging.
             if (dragging && geometry != null) {
-                drawHint(canvas, geometry.hud, "screen_hud".equals(hoverReceiver));
-                drawHint(canvas, geometry.fse, "screen_fse".equals(hoverReceiver));
+                for (Map.Entry<String, Rect> entry
+                        : geometry.availableReceiverBounds(availableReceivers).entrySet()) {
+                    drawHint(canvas, entry.getValue(), entry.getKey().equals(hoverReceiver));
+                }
+                if (!screenAvailabilityConfirmed) {
+                    drawScreenCheck(canvas);
+                }
             }
             // Floating dragged icon.
             if (dragging && dragTarget != null) {
@@ -606,6 +679,19 @@ public class SimulcastAccessibilityService extends AccessibilityService {
                 fill.setColor(Color.argb(210, 31, 194, 142));
                 canvas.drawRoundRect(b, dp(14), dp(14), fill);
             }
+        }
+
+        private void drawScreenCheck(Canvas canvas) {
+            if (geometry == null || geometry.central == null) {
+                return;
+            }
+            Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+            text.setColor(Color.argb(220, 224, 232, 236));
+            text.setTextAlign(Paint.Align.CENTER);
+            text.setTypeface(Typeface.DEFAULT_BOLD);
+            text.setTextSize(dp(18));
+            canvas.drawText("Проверяю экраны…", geometry.central.centerX(),
+                    geometry.central.bottom + dp(28), text);
         }
     }
 
