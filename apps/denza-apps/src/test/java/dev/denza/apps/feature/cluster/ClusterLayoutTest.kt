@@ -21,4 +21,51 @@ class ClusterLayoutTest {
         assertEquals(ClusterBounds(576, 0, 1344, 720), center.cameraBounds)
         assertEquals(ClusterBounds(1152, 0, 1920, 720), right.cameraBounds)
     }
+
+    @Test
+    fun navigationPlacementsReuseMirrorWidthAndProtectInstrumentData() {
+        assertEquals(
+            ClusterBounds(0, 0, 2560, 720),
+            ClusterMapLayout(2560, 720, ClusterMapPlacement.FULL).surfaceBounds,
+        )
+        assertEquals(
+            ClusterBounds(768, 0, 1791, 720),
+            ClusterMapLayout(2560, 720, ClusterMapPlacement.CENTER).surfaceBounds,
+        )
+        assertEquals(
+            ClusterBounds(0, 0, 1023, 609),
+            ClusterMapLayout(2560, 720, ClusterMapPlacement.LEFT).surfaceBounds,
+        )
+        assertEquals(
+            ClusterBounds(1537, 100, 2560, 609),
+            ClusterMapLayout(2560, 720, ClusterMapPlacement.RIGHT).surfaceBounds,
+        )
+    }
+
+    @Test
+    fun navigationShadeOnlyCoversEdgesThatCanMeetInstrumentData() {
+        val full = ClusterMapLayout(2560, 720, ClusterMapPlacement.FULL)
+        val center = ClusterMapLayout(2560, 720, ClusterMapPlacement.CENTER)
+        val left = ClusterMapLayout(2560, 720, ClusterMapPlacement.LEFT)
+        val right = ClusterMapLayout(2560, 720, ClusterMapPlacement.RIGHT)
+
+        assertEquals(true, full.shadeTop)
+        assertEquals(true, full.shadeBottom)
+        assertEquals(90, full.shadeHeightDp)
+        assertEquals(204, full.shadeAlpha)
+        assertEquals(true, center.shadeTop)
+        assertEquals(false, center.shadeBottom)
+        assertEquals(130, center.shadeHeightDp)
+        assertEquals(250, center.shadeAlpha)
+        assertEquals(100, center.densityScalePercent)
+        assertEquals(false, left.shadeTop)
+        assertEquals(false, left.shadeBottom)
+        assertEquals(192, left.shadeHeightDp)
+        assertEquals(250, left.shadeAlpha)
+        assertEquals(ClusterShadeCorner.TOP_RIGHT, left.shadeCorner)
+        assertEquals(null, right.shadeCorner)
+        assertEquals(0, right.shadeHeightDp)
+        assertEquals(0, right.shadeAlpha)
+        assertEquals(85, left.densityScalePercent)
+    }
 }

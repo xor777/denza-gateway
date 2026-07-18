@@ -23,6 +23,18 @@ enum class ClusterCameraPosition {
     CENTER,
 }
 
+enum class ClusterMapPlacement {
+    FULL,
+    LEFT,
+    CENTER,
+    RIGHT,
+}
+
+enum class ClusterShadeCorner {
+    TOP_LEFT,
+    TOP_RIGHT,
+}
+
 data class ClusterBounds(
     val left: Int,
     val top: Int,
@@ -62,3 +74,60 @@ data class ClusterSceneState(
     val needsDisplayVerification: Boolean = false,
     val details: String? = null,
 )
+
+data class ClusterMapLayout(
+    val displayWidth: Int,
+    val displayHeight: Int,
+    val placement: ClusterMapPlacement,
+) {
+    private val cameraPosition = when (placement) {
+        ClusterMapPlacement.LEFT -> ClusterCameraPosition.LEFT
+        ClusterMapPlacement.RIGHT -> ClusterCameraPosition.RIGHT
+        else -> ClusterCameraPosition.CENTER
+    }
+    private val cameraBounds = ClusterLayout(
+        displayWidth,
+        displayHeight,
+        cameraPosition,
+    ).cameraBounds
+    private val sideBottom = (displayHeight * 84 / 100 + displayHeight / 144)
+        .coerceAtLeast(1)
+        .coerceAtMost(displayHeight)
+    private val sideTop = if (placement == ClusterMapPlacement.RIGHT) {
+        displayHeight * 14 / 100
+    } else {
+        0
+    }
+    val surfaceBounds: ClusterBounds = when (placement) {
+        ClusterMapPlacement.FULL -> ClusterBounds(0, 0, displayWidth, displayHeight)
+        ClusterMapPlacement.CENTER -> cameraBounds
+        ClusterMapPlacement.LEFT,
+        ClusterMapPlacement.RIGHT,
+        -> cameraBounds.copy(top = sideTop, bottom = sideBottom)
+    }
+    val shadeTop: Boolean = placement == ClusterMapPlacement.FULL ||
+        placement == ClusterMapPlacement.CENTER
+    val shadeBottom: Boolean = placement == ClusterMapPlacement.FULL
+    val shadeHeightDp: Int = when (placement) {
+        ClusterMapPlacement.CENTER -> 130
+        ClusterMapPlacement.FULL -> 90
+        ClusterMapPlacement.LEFT -> 192
+        ClusterMapPlacement.RIGHT -> 0
+    }
+    val shadeAlpha: Int = when (placement) {
+        ClusterMapPlacement.CENTER -> 250
+        ClusterMapPlacement.FULL -> 204
+        ClusterMapPlacement.LEFT -> 250
+        ClusterMapPlacement.RIGHT -> 0
+    }
+    val shadeCorner: ClusterShadeCorner? = when (placement) {
+        ClusterMapPlacement.LEFT -> ClusterShadeCorner.TOP_RIGHT
+        else -> null
+    }
+    val densityScalePercent: Int = when (placement) {
+        ClusterMapPlacement.LEFT,
+        ClusterMapPlacement.RIGHT,
+        -> 85
+        else -> 100
+    }
+}

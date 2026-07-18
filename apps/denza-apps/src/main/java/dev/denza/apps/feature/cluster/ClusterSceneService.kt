@@ -12,6 +12,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.Shader
 import android.os.Handler
 import android.os.IBinder
@@ -37,7 +38,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-/** One instrument-display scene: full-size map base, camera overlay, diagnostics on top. */
+/** One instrument-display scene: positioned map surface, camera overlay, diagnostics on top. */
 class ClusterSceneService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var basePresentation: ClusterPresentation? = null
@@ -55,7 +56,7 @@ class ClusterSceneService : Service() {
             ACTION_STOP -> stopScene()
             ACTION_HIDE_CAMERA -> hideCamera()
             ACTION_SHOW_CAMERA -> showCamera(intent.cameraConfig())
-            ACTION_SHOW_MAP -> showMap()
+            ACTION_SHOW_MAP -> showMap(intent.mapPlacement())
             ACTION_HIDE_MAP -> hideMap()
             ACTION_PREVIEW -> showPreview(
                 position = intent.position(),
@@ -155,11 +156,11 @@ class ClusterSceneService : Service() {
         updateNotification("Mirrors are ready")
     }
 
-    private fun showMap() {
+    private fun showMap(placement: ClusterMapPlacement) {
         val consumer = pendingMapConsumer ?: return
         val scene = prepareBaseScene() ?: return
         pendingMapConsumer = null
-        scene.showMap(consumer)
+        scene.showMap(placement, consumer)
         updateNotification("Navigation display is ready")
     }
 
@@ -230,16 +231,20 @@ class ClusterSceneService : Service() {
     ) : Presentation(context, display) {
         lateinit var mapSurface: SurfaceView
             private set
-        private lateinit var mapShade: View
+        private lateinit var mapShade: ProjectionEdgeShadeView
         private lateinit var cameraTexture: TextureView
         private lateinit var cameraFrame: FrameLayout
         private lateinit var diagnosticLayer: FrameLayout
         private lateinit var renderer: AvcCameraRenderer
         private var mapConsumer: MapSurfaceConsumer? = null
+        private var expectedMapWidth = 0
+        private var expectedMapHeight = 0
+        private var expectedMapDensityDpi = 0
         private val mapSurfaceCallback = object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) = dispatchMapSurface(holder.surface)
+            override fun surfaceCreated(holder: SurfaceHolder) =
+                dispatchMapSurface(holder.surface, mapSurface.width, mapSurface.height)
             override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) =
-                dispatchMapSurface(holder.surface)
+                dispatchMapSurface(holder.surface, width, height)
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
         }
 
@@ -266,9 +271,9 @@ class ClusterSceneService : Service() {
                 visibility = View.INVISIBLE
                 holder.addCallback(mapSurfaceCallback)
             }
-            root.addView(mapSurface, matchParent())
+            root.addView(mapSurface, FrameLayout.LayoutParams(1, 1, Gravity.TOP or Gravity.START))
             mapShade = ProjectionEdgeShadeView(context).apply { visibility = View.INVISIBLE }
-            root.addView(mapShade, matchParent())
+            root.addView(mapShade, FrameLayout.LayoutParams(1, 1, Gravity.TOP or Gravity.START))
 
             cameraFrame = FrameLayout(context).apply {
                 setBackgroundColor(Color.BLACK)
@@ -344,15 +349,49 @@ class ClusterSceneService : Service() {
             )
         }
 
-        fun showMap(consumer: MapSurfaceConsumer) {
+        fun showMap(placement: ClusterMapPlacement, consumer: MapSurfaceConsumer) {
+            val metrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            display.getRealMetrics(metrics)
+            val layout = ClusterMapLayout(
+                metrics.widthPixels,
+                metrics.heightPixels,
+                placement,
+            )
+            val bounds = layout.surfaceBounds
+            expectedMapWidth = bounds.right - bounds.left
+            expectedMapHeight = bounds.bottom - bounds.top
+            expectedMapDensityDpi = metrics.densityDpi * layout.densityScalePercent / 100
             mapConsumer = consumer
+            mapSurface.layoutParams = mapParams(bounds)
+            mapSurface.holder.setFixedSize(expectedMapWidth, expectedMapHeight)
+            mapShade.layoutParams = mapParams(bounds)
+            mapShade.configure(
+                top = layout.shadeTop,
+                bottom = layout.shadeBottom,
+                heightDp = layout.shadeHeightDp,
+                alpha = layout.shadeAlpha,
+                corner = layout.shadeCorner,
+            )
             mapSurface.visibility = View.VISIBLE
-            mapShade.visibility = View.VISIBLE
-            dispatchMapSurface(mapSurface.holder.surface)
+            mapShade.visibility = if (
+                layout.shadeTop || layout.shadeBottom || layout.shadeCorner != null
+            ) {
+                View.VISIBLE
+            } else {
+                View.INVISIBLE
+            }
+            mapSurface.requestLayout()
+            mapSurface.post {
+                dispatchMapSurface(mapSurface.holder.surface, mapSurface.width, mapSurface.height)
+            }
         }
 
         fun hideMap() {
             mapConsumer = null
+            expectedMapWidth = 0
+            expectedMapHeight = 0
+            expectedMapDensityDpi = 0
             mapShade.visibility = View.INVISIBLE
             mapSurface.visibility = View.INVISIBLE
         }
@@ -409,17 +448,24 @@ class ClusterSceneService : Service() {
             )
         }
 
-        private fun dispatchMapSurface(surface: Surface?) {
+        private fun dispatchMapSurface(surface: Surface?, width: Int, height: Int) {
             if (surface == null || !surface.isValid) return
-            val metrics = android.util.DisplayMetrics()
-            @Suppress("DEPRECATION")
-            display.getRealMetrics(metrics)
+            if (width != expectedMapWidth || height != expectedMapHeight) return
             mapConsumer?.onSurface(
                 surface,
-                metrics.widthPixels,
-                metrics.heightPixels,
-                metrics.densityDpi,
+                width,
+                height,
+                expectedMapDensityDpi,
             )
+        }
+
+        private fun mapParams(bounds: ClusterBounds) = FrameLayout.LayoutParams(
+            bounds.right - bounds.left,
+            bounds.bottom - bounds.top,
+            Gravity.TOP or Gravity.START,
+        ).apply {
+            leftMargin = bounds.left
+            topMargin = bounds.top
         }
 
         private fun matchParent(gravity: Int = Gravity.TOP or Gravity.START) =
@@ -430,27 +476,64 @@ class ClusterSceneService : Service() {
             )
     }
 
-    /** OpenBYD-compatible navigation contrast shades: 90 dp, 80% black. */
+    /** OpenBYD-compatible navigation contrast shades, strengthened for the center panel. */
     private class ProjectionEdgeShadeView(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val fadeHeight = (90f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        private var fadeHeight = (90f * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+        private var shadeAlpha = 204
+        private var shadeTop = true
+        private var shadeBottom = true
+        private var shadeCorner: ClusterShadeCorner? = null
+
+        fun configure(
+            top: Boolean,
+            bottom: Boolean,
+            heightDp: Int,
+            alpha: Int,
+            corner: ClusterShadeCorner?,
+        ) {
+            shadeTop = top
+            shadeBottom = bottom
+            shadeCorner = corner
+            fadeHeight = (heightDp * resources.displayMetrics.density).toInt().coerceAtLeast(1)
+            shadeAlpha = alpha.coerceIn(0, 255)
+            invalidate()
+        }
 
         override fun onDraw(canvas: Canvas) {
             val edge = fadeHeight.coerceAtMost(height)
-            val dark = Color.argb(204, 0, 0, 0)
+            val dark = Color.argb(shadeAlpha, 0, 0, 0)
             val clear = Color.TRANSPARENT
-            paint.shader = LinearGradient(0f, 0f, 0f, edge.toFloat(), dark, clear, Shader.TileMode.CLAMP)
-            canvas.drawRect(0f, 0f, width.toFloat(), edge.toFloat(), paint)
-            paint.shader = LinearGradient(
-                0f,
-                (height - edge).toFloat(),
-                0f,
-                height.toFloat(),
-                clear,
-                dark,
-                Shader.TileMode.CLAMP,
-            )
-            canvas.drawRect(0f, (height - edge).toFloat(), width.toFloat(), height.toFloat(), paint)
+            if (shadeTop) {
+                paint.shader = LinearGradient(0f, 0f, 0f, edge.toFloat(), dark, clear, Shader.TileMode.CLAMP)
+                canvas.drawRect(0f, 0f, width.toFloat(), edge.toFloat(), paint)
+            }
+            if (shadeBottom) {
+                paint.shader = LinearGradient(
+                    0f,
+                    (height - edge).toFloat(),
+                    0f,
+                    height.toFloat(),
+                    clear,
+                    dark,
+                    Shader.TileMode.CLAMP,
+                )
+                canvas.drawRect(0f, (height - edge).toFloat(), width.toFloat(), height.toFloat(), paint)
+            }
+            shadeCorner?.let { corner ->
+                val centerX = if (corner == ClusterShadeCorner.TOP_LEFT) 0f else width.toFloat()
+                paint.shader = RadialGradient(
+                    centerX,
+                    0f,
+                    edge.toFloat(),
+                    dark,
+                    clear,
+                    Shader.TileMode.CLAMP,
+                )
+                val left = if (corner == ClusterShadeCorner.TOP_LEFT) 0f else width - edge.toFloat()
+                val right = if (corner == ClusterShadeCorner.TOP_LEFT) edge.toFloat() else width.toFloat()
+                canvas.drawRect(left.coerceAtLeast(0f), 0f, right.coerceAtMost(width.toFloat()), edge.toFloat(), paint)
+            }
             paint.shader = null
         }
     }
@@ -508,6 +591,12 @@ class ClusterSceneService : Service() {
         MirrorsPosition.SIDES
     }
 
+    private fun Intent.mapPlacement() = runCatching {
+        ClusterMapPlacement.valueOf(
+            getStringExtra(EXTRA_MAP_PLACEMENT) ?: ClusterMapPlacement.FULL.name,
+        )
+    }.getOrDefault(ClusterMapPlacement.FULL)
+
     companion object {
         private const val TAG = "DenzaClusterScene"
         private const val CHANNEL_ID = "denza_cluster_scene"
@@ -526,6 +615,7 @@ class ClusterSceneService : Service() {
         private const val EXTRA_PROCESSING = "processing"
         private const val EXTRA_VISIBLE = "visible"
         private const val EXTRA_DURATION = "duration"
+        private const val EXTRA_MAP_PLACEMENT = "map_placement"
 
         @Volatile private var active: ClusterSceneService? = null
         @Volatile private var pendingMapConsumer: MapSurfaceConsumer? = null
@@ -557,9 +647,16 @@ class ClusterSceneService : Service() {
             )
         }
 
-        fun showMap(context: Context, consumer: MapSurfaceConsumer) {
+        fun showMap(
+            context: Context,
+            placement: ClusterMapPlacement,
+            consumer: MapSurfaceConsumer,
+        ) {
             pendingMapConsumer = consumer
-            start(context, ACTION_SHOW_MAP)
+            context.startForegroundService(
+                serviceIntent(context, ACTION_SHOW_MAP)
+                    .putExtra(EXTRA_MAP_PLACEMENT, placement.name),
+            )
         }
 
         fun hideMap(context: Context) {

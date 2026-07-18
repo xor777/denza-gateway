@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import dev.denza.apps.feature.cluster.ClusterDisplayResolver
 import dev.denza.apps.feature.cluster.ClusterDisplaySelection
+import dev.denza.apps.feature.cluster.ClusterMapPlacement
 import dev.denza.apps.feature.cluster.ClusterSceneService
 import dev.denza.apps.feature.cluster.MapSurfaceConsumer
 import dev.denza.disharebridge.LocalAdbClient
@@ -24,6 +25,7 @@ object NavigationCoordinator {
     @Volatile private var initialized = false
     @Volatile private var automaticEnabled = false
     @Volatile private var selectedPackage = NavigationAppPolicy.DEFAULT_PACKAGE
+    @Volatile private var selectedPlacement = ClusterMapPlacement.FULL
     private var stockModeDetector: StockClusterModeDetector? = null
     private var lastStockMapVisible: Boolean? = null
     private var automaticProjectionActive = false
@@ -40,6 +42,7 @@ object NavigationCoordinator {
         }
         initialized = true
         selectedPackage = NavigationSettings.selectedPackage(app)
+        selectedPlacement = NavigationSettings.placement(app)
         val adb = LocalAdbClient(app, ADB_KEY_COMMENT)
         stockModeDetector = StockClusterModeDetector(adb::shell)
         executor.execute(::discoverTask)
@@ -57,6 +60,38 @@ object NavigationCoordinator {
     fun automaticEnabled(): Boolean = automaticEnabled
 
     fun selectedPackage(): String = selectedPackage
+
+    fun placement(): ClusterMapPlacement = selectedPlacement
+
+    fun selectPlacement(placement: ClusterMapPlacement) {
+        val app = context ?: return
+        executor.execute {
+            if (selectedPlacement == placement) {
+                onStateChanged?.invoke()
+                return@execute
+            }
+            if (
+                session.phase == NavigationPhase.OPENING ||
+                session.phase == NavigationPhase.PROJECTING ||
+                session.phase == NavigationPhase.RETURNING ||
+                session.phase == NavigationPhase.RECOVERING
+            ) {
+                return@execute
+            }
+            val wasProjected = session.phase == NavigationPhase.PROJECTED
+            val wasAutomatic = automaticProjectionActive
+            NavigationSettings.setPlacement(app, placement)
+            selectedPlacement = placement
+            onStateChanged?.invoke()
+            if (!wasProjected) return@execute
+
+            returnToCentralDisplay(focusTask = false)
+            val shouldReproject = !wasAutomatic ||
+                (automaticEnabled && lastStockMapVisible == true)
+            automaticProjectionActive = wasAutomatic && shouldReproject
+            if (shouldReproject) projectToCluster()
+        }
+    }
 
     fun selectPackage(packageName: String) {
         val app = context ?: return
@@ -247,7 +282,7 @@ object NavigationCoordinator {
         }
         update(session.copy(phase = NavigationPhase.PROJECTING, message = "Переношу на приборку"))
         val consumed = AtomicBoolean(false)
-        ClusterSceneService.showMap(app, MapSurfaceConsumer { surface, width, height, density ->
+        ClusterSceneService.showMap(app, selectedPlacement, MapSurfaceConsumer { surface, width, height, density ->
             if (!consumed.compareAndSet(false, true)) return@MapSurfaceConsumer
             executor.execute {
                 try {
