@@ -3,7 +3,7 @@
 Android workspace for reverse-engineering a Denza / BYD head unit and building
 useful apps on top of it. Three concerns are kept deliberately separate:
 
-- **Apps** — the useful end-user apps: Denza Gateway, Denza Mirrors, Denza Apps.
+- **Apps** — the useful end-user apps: Car ADB Gateway, Denza Gateway, Denza Mirrors, Denza Apps.
 - **A place to poke the car** — host scripts in `tools/` and on-device research
   probes in Denza Mirrors' `dev.denza.mirrors.probe` package.
 - **Knowledge of what works / what doesn't** — durable findings in `docs/` and
@@ -20,6 +20,9 @@ useful apps on top of it. Three concerns are kept deliberately separate:
 | `denza-mirrors/` | Denza Mirrors | Driver-display side-camera enlargement. Product code in `dev.denza.mirrors`; research probes isolated in `dev.denza.mirrors.probe`. |
 | `denza-apps/` | Denza Apps | Head app for car features. Current feature: Simulcast for Russian video apps via an accessibility overlay. |
 | `dishare-bridge/` | _(library)_ | Shared raw DiShare binder bridge used by `denza-apps`. |
+| `car-adb-gateway/` | Car ADB Gateway | Generic relay-only remote ADB gateway with one trusted computer and self-healing background service. |
+| `cli/` | `cag` | Go developer CLI for macOS/Linux. |
+| `relay/`, `ops/ansible/` | Relay control plane | Atomic enrollment/pairing state and repeatable restricted OpenSSH/PAM host configuration. |
 
 Supporting areas: `docs/` (durable knowledge), `tools/` (host-side probe
 scripts), `research/` (parked/non-built code and experiments), `reverse/` (local
@@ -32,6 +35,8 @@ reverse-engineering inputs/outputs, untracked).
 - [Docs index](docs/README.md) — where each kind of knowledge lives.
 - [Side camera findings](docs/side-camera-findings.md) — Denza Mirrors status.
 - [DiShare API notes](docs/dishare-api-notes.md) — DiShare/HUD reverse-engineering.
+- [Car ADB Gateway architecture](docs/CLOUD-ARCHITECTURE.md) — normative relay-only design.
+- [Car ADB Gateway decisions](docs/CAR-ADB-GATEWAY-DECISIONS.md) — rationale and evidence log.
 
 ## Build
 
@@ -52,6 +57,7 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 ./gradlew :denza-gateway:testDebugUnitTest :denza-gateway:assembleDebug
 ./gradlew :denza-mirrors:assembleDebug
 ./gradlew :denza-apps:assembleDebug
+./gradlew :car-adb-gateway:testDebugUnitTest :car-adb-gateway:assembleDebug
 ```
 
 If Android platforms are missing, install them with:
@@ -66,6 +72,15 @@ Local APK paths (generated APKs are intentionally ignored by Git):
 denza-gateway/build/outputs/apk/debug/denza-gateway.apk
 denza-mirrors/build/outputs/apk/debug/denza-mirrors.apk
 denza-apps/build/outputs/apk/debug/denza-apps.apk
+car-adb-gateway/build/outputs/apk/debug/car-adb-gateway.apk
+```
+
+Build the cross-platform developer CLI:
+
+```bash
+cd cli
+go test ./...
+go build -o cag ./cmd/cag
 ```
 
 ---
@@ -124,3 +139,31 @@ adb devices
   X11, agent forwarding, and remote forwarding are disabled.
 - Local forwarding is allowed only to the detected/selected ADB endpoint.
 - Peers outside the active Wi-Fi subnet are denied and logged.
+
+---
+
+## Car ADB Gateway
+
+`car-adb-gateway` is a separate APK for relay-only access through the fixed
+`adbgw.ru:443` service. It never exposes ADB or SSH on a vehicle network
+interface. An administrator first creates a vehicle invite; after enrollment, a
+person at the vehicle can give one developer computer a ten-minute pairing code.
+
+The app deliberately supports one trusted computer. Pairing a replacement keeps
+the old access until the new computer completes end-to-end authentication, then
+revokes the old key and closes its session.
+
+Developer workflow:
+
+```bash
+cag pair XXXX-XXXX
+cag connect -- adb devices
+cag connect -- adb shell
+cag status
+cag disconnect
+```
+
+See the architecture document for access roles, background behavior, security
+boundaries, and pending live verification. Do not deploy `relay/` scripts by
+hand; use and verify `ops/ansible` so SSH, PAM, account, and file restrictions
+stay consistent.
