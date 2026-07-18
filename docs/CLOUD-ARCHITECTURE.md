@@ -1,9 +1,9 @@
 # Car ADB Gateway — Relay-Only Architecture
 
 Status: normative description of the implementation in this repository. Updated
-2026-07-18. The lease/GC lifecycle revision has passed local acceptance and is
-awaiting its Ansible rollout to `adbgw.ru`; head-unit end-to-end and soak
-verification remain mandatory before production use.
+2026-07-18. The lease/GC lifecycle revision passed local acceptance, an
+idempotent Ansible rollout, and live verification on `adbgw.ru`; head-unit
+end-to-end and soak verification remain mandatory before production use.
 
 Car ADB Gateway is a standalone, vehicle-agnostic Android app for head units
 where ADB is available locally. It can be installed alongside the existing
@@ -289,7 +289,7 @@ free local port and runs `adb connect`.
 
 ## 8. Verification Status
 
-Completed locally for the lifecycle revision on 2026-07-18:
+Completed locally and on `adbgw.ru` for the lifecycle revision on 2026-07-18:
 
 - 18 relay unit tests covering schema migration, leases, GC cascades, port
   wrap/reuse, idempotent submit/commit, shared reads, directory fsync, emergency
@@ -302,11 +302,16 @@ Completed locally for the lifecycle revision on 2026-07-18:
   errors;
 - local Ansible syntax checks and production-profile lint for ACLs, GC timer,
   schema doctor, SSH source limits, and fail2ban policy.
+- Ansible migrated the empty production registration set from schema v1 to v2,
+  removed the three confirmed-empty legacy TSV files, and converged to
+  `changed=0` on the second run without creating a test device;
+- live verification proved doctor `ok=true` with no orphan clients or expired
+  devices, read-only `cag-authkeys` ACLs, active/enabled hourly GC, effective
+  OpenSSH limits and penalties, fail2ban `5/10m/15m`, listener separation, UFW,
+  NTP, DNS, and the pinned relay host key.
 
 Required before production:
 
-- deploy the lifecycle revision through Ansible twice, prove the second run is
-  idempotent, and run live relay verification;
 - complete relay → CLI → inner SSH → real ADB end-to-end verification;
 - verify API levels 26, 31, 34, 35, and 36;
 - test installation and ADB approval, reboot, sleep/wake, network switching,
