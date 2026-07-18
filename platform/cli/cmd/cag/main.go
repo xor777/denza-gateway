@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/xor777/denza-gateway/cli/internal/cag"
+	"github.com/xor777/denza-lab/platform/cli/internal/cag"
 )
 
 func main() {

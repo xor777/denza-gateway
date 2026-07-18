@@ -64,8 +64,8 @@ end-to-end encrypted to the Android app. See the
 
 ## Repository layout
 
-The repository is becoming **Denza Lab**: the umbrella name describes the work
-better than the historical `denza-gateway` name.
+The repository is **Denza Lab**: the umbrella name describes the work better
+than the historical Denza Gateway product name.
 
 The product cleanup is intentionally staged:
 

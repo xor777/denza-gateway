@@ -14,8 +14,8 @@ building useful apps on it. Three concerns are kept separate on purpose:
 - **Knowledge of what works / doesn't** — `docs/` (durable) and `research/`
   (parked code).
 
-The GitHub repository and local directory may still be called `denza-gateway`
-for historical reasons. The repository identity is **Denza Lab**.
+The GitHub repository is `xor777/denza-lab`. An existing local checkout may
+still use the historical `denza-gateway` directory name.
 
 ## Read before changing code
 

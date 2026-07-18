@@ -2,8 +2,8 @@
 
 This repository is a small monorepo: Android apps at different lifecycle stages,
 one shared library, remote-access infrastructure, and research/tooling areas.
-The repository identity is **Denza Lab**; the historical GitHub/local directory
-name may still be `denza-gateway` during the rename.
+The repository is **Denza Lab** (`xor777/denza-lab`). An existing local checkout
+may still use the historical `denza-gateway` directory name.
 
 ## Apps
 
