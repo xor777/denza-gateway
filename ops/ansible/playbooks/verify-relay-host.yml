@@ -35,6 +35,26 @@
       register: relay_verify_enroll_sshd
       changed_when: false
 
+    - name: Read effective cag-pair SSH settings
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+          - -C
+          - user=cag-pair,addr=127.0.0.1,host=localhost
+      register: relay_verify_pair_sshd
+      changed_when: false
+
+    - name: Read effective cag-control SSH settings
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/sshd
+          - -T
+          - -C
+          - user=cag-control,addr=127.0.0.1,host=localhost
+      register: relay_verify_control_sshd
+      changed_when: false
+
     - name: Require direction-specific forwarding restrictions
       ansible.builtin.assert:
         that:
@@ -49,8 +69,38 @@
           - "'permitopen 127.0.0.1:*' in relay_verify_client_sshd.stdout"
           - "'forcecommand /bin/false' in relay_verify_client_sshd.stdout"
           - "'allowtcpforwarding no' in relay_verify_enroll_sshd.stdout"
-          - "'passwordauthentication no' in relay_verify_enroll_sshd.stdout"
-          - "'forcecommand /bin/false' in relay_verify_enroll_sshd.stdout"
+          - "'passwordauthentication yes' in relay_verify_enroll_sshd.stdout"
+          - "'forcecommand /opt/cag/enroll.sh' in relay_verify_enroll_sshd.stdout"
+          - "'allowtcpforwarding no' in relay_verify_pair_sshd.stdout"
+          - "'passwordauthentication yes' in relay_verify_pair_sshd.stdout"
+          - "'forcecommand /opt/cag/pair-client.sh' in relay_verify_pair_sshd.stdout"
+          - "'allowtcpforwarding no' in relay_verify_control_sshd.stdout"
+          - "'pubkeyauthentication yes' in relay_verify_control_sshd.stdout"
+          - "'authorizedkeyscommand /opt/cag/authorized-keys.sh %u' in relay_verify_control_sshd.stdout"
+
+    - name: Verify relay control-plane files
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /opt/cag/cag-state
+        - /opt/cag/check-code.sh
+        - /opt/cag/enroll.sh
+        - /opt/cag/pair-client.sh
+        - /opt/cag/device-control.sh
+        - /opt/cag/authorized-keys.sh
+        - /usr/local/sbin/cag-admin
+      register: relay_verify_control_files
+
+    - name: Require executable root-owned control-plane files
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isreg
+          - item.stat.pw_name == 'root'
+          - item.stat.executable
+      loop: "{{ relay_verify_control_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
     - name: Read service-account password states
       ansible.builtin.command: "passwd -S {{ item }}"
@@ -58,13 +108,18 @@
         - cag-device
         - cag-client
         - cag-enroll
+        - cag-pair
+        - cag-control
+        - cag-authkeys
       register: relay_verify_account_states
       changed_when: false
 
-    - name: Require locked service-account passwords
+    - name: Require correct service-account password states
       ansible.builtin.assert:
         that:
-          - "' L ' in item.stdout"
+          - >-
+            (' P ' in item.stdout) if item.item in ['cag-enroll', 'cag-pair']
+            else (' L ' in item.stdout)
       loop: "{{ relay_verify_account_states.results }}"
       loop_control:
         label: "{{ item.item }}"
@@ -111,6 +166,12 @@
       register: relay_verify_dns
       changed_when: false
       failed_when: false
+
+    - name: Require the pinned relay identity and DNS target
+      ansible.builtin.assert:
+        that:
+          - relay_host_ed25519_fingerprint in relay_verify_host_key.stdout
+          - relay_host_public_ipv4 in relay_verify_dns.stdout
 
     - name: Show relay verification summary
       ansible.builtin.debug:

@@ -24,4 +24,4 @@ fail2ban_sshd_ports: "22,443"
 
 relay_host_domain: adbgw.ru
 relay_host_public_ipv4: 95.179.132.238
-relay_host_enrollment_enabled: false
+relay_host_enrollment_enabled: true

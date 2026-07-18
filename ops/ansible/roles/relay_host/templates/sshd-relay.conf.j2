@@ -2,6 +2,8 @@
 Port {{ relay_host_admin_ssh_port }}
 Port {{ relay_host_ssh_port }}
 GatewayPorts no
+AuthorizedKeysCommand {{ relay_host_root }}/authorized-keys.sh %u
+AuthorizedKeysCommandUser cag-authkeys
 
 Match User cag-device
     PasswordAuthentication no
@@ -48,5 +50,31 @@ Match User cag-enroll
 {% else %}
     ForceCommand /bin/false
 {% endif %}
+
+Match User cag-pair
+    PasswordAuthentication yes
+    KbdInteractiveAuthentication no
+    PubkeyAuthentication no
+    AuthenticationMethods password
+    AllowTcpForwarding no
+    AllowStreamLocalForwarding no
+    PermitTTY no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitTunnel no
+    PermitUserRC no
+    ForceCommand {{ relay_host_root }}/pair-client.sh
+
+Match User cag-control
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    PubkeyAuthentication yes
+    AllowTcpForwarding no
+    AllowStreamLocalForwarding no
+    PermitTTY no
+    X11Forwarding no
+    AllowAgentForwarding no
+    PermitTunnel no
+    PermitUserRC no
 
 Match all

@@ -24,7 +24,7 @@
   ansible.builtin.user:
     name: "{{ item }}"
     group: "{{ item }}"
-    groups: "{{ [relay_host_state_group] if item == 'cag-enroll' else [] }}"
+    groups: "{{ [relay_host_state_group] if item in relay_host_state_accounts else [] }}"
     append: true
     home: "/var/lib/{{ item }}"
     shell: /bin/bash
@@ -32,6 +32,14 @@
     create_home: true
     password_lock: true
   loop: "{{ relay_host_service_accounts }}"
+
+- name: Give PAM-only accounts an unguessable unlocked shadow hash
+  ansible.builtin.user:
+    name: "{{ item }}"
+    password: "{{ relay_host_pam_account_password_hash }}"
+    password_lock: false
+  loop: "{{ relay_host_pam_accounts }}"
+  no_log: true
 
 - name: Restrict service-account homes
   ansible.builtin.file:
@@ -74,36 +82,61 @@
       mode: "0755"
     - path: "{{ relay_host_root }}/state"
       group: "{{ relay_host_state_group }}"
-      mode: "0750"
-    - path: "{{ relay_host_root }}/state/codes"
-      group: "{{ relay_host_state_group }}"
-      mode: "0770"
+      mode: "2770"
     - path: "{{ relay_host_root }}/state/locks"
       group: "{{ relay_host_state_group }}"
-      mode: "0770"
+      mode: "2770"
   loop_control:
     label: "{{ item.path }}"
 
-- name: Create the device registry
+- name: Create the atomic relay state
   ansible.builtin.copy:
-    dest: "{{ relay_host_root }}/state/devices.tsv"
-    content: ""
+    dest: "{{ relay_host_root }}/state/state.json"
+    content: >-
+      {"auth_limits":{},"clients":{},"codes":{},"devices":{},"grants":{},"next_port":20000,"pending":{},"version":1}
     owner: root
     group: "{{ relay_host_state_group }}"
     mode: "0660"
     force: false
 
-- name: Create root-managed relay registries
+- name: Install the relay state engine
   ansible.builtin.copy:
-    dest: "{{ relay_host_root }}/state/{{ item }}"
-    content: ""
+    src: "{{ playbook_dir }}/../../../relay/cag_state.py"
+    dest: "{{ relay_host_root }}/cag-state"
     owner: root
     group: root
-    mode: "0600"
-    force: false
+    mode: "0755"
+
+- name: Install relay command wrappers
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../../relay/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0755"
   loop:
-    - users.tsv
-    - grants.tsv
+    - src: check-code.sh
+      dest: "{{ relay_host_root }}/check-code.sh"
+    - src: enroll.sh
+      dest: "{{ relay_host_root }}/enroll.sh"
+    - src: pair-client.sh
+      dest: "{{ relay_host_root }}/pair-client.sh"
+    - src: device-control.sh
+      dest: "{{ relay_host_root }}/device-control.sh"
+    - src: authorized-keys.sh
+      dest: "{{ relay_host_root }}/authorized-keys.sh"
+    - src: cag-admin
+      dest: /usr/local/sbin/cag-admin
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Authenticate invite and pairing codes before the system password stack
+  ansible.builtin.blockinfile:
+    path: /etc/pam.d/sshd
+    marker: "# {mark} ANSIBLE MANAGED CAG CODE AUTH"
+    insertbefore: '^@include common-auth'
+    block: |
+      auth [success=1 default=ignore] pam_exec.so expose_authtok quiet {{ relay_host_root }}/check-code.sh
 
 - name: Enable network time synchronization
   ansible.builtin.service:

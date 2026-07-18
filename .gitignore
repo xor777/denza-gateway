@@ -14,3 +14,5 @@
 .venv-ansible/
 ops/ansible/.ansible/
 *.retry
+__pycache__/
+*.py[cod]
