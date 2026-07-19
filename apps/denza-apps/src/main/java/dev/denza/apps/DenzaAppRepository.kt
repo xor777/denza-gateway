@@ -5,7 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.provider.Settings
-import android.text.TextUtils
 import dev.denza.apps.core.FeatureId
 import dev.denza.apps.core.FeatureReducer
 import dev.denza.apps.core.FeatureSnapshot
@@ -62,6 +61,7 @@ data class DenzaUiState(
     val navigationPickerVisible: Boolean = false,
     val selectedAppCount: Int = 0,
     val selectedAppLabels: List<String> = emptyList(),
+    val selectedApps: List<SimulcastAppChoice> = emptyList(),
     val mirrorsPosition: MirrorsPosition = MirrorsPosition.SIDES,
     val mirrorsProcessing: Boolean = true,
     val setupRunning: Boolean = false,
@@ -76,9 +76,6 @@ data class DenzaUiState(
 object DenzaAppRepository {
     private const val DISHARE_PACKAGE = "com.byd.dishare"
     private const val ADB_KEY_COMMENT = "denza-apps@denza"
-    private const val ACCESSIBILITY_COMPONENT =
-        "dev.denza.apps/dev.denza.apps.SimulcastAccessibilityService"
-
     private val executor = Executors.newSingleThreadExecutor()
     private val mutableState = MutableStateFlow(DenzaUiState())
     val state: StateFlow<DenzaUiState> = mutableState.asStateFlow()
@@ -114,11 +111,13 @@ object DenzaAppRepository {
         val navigationSession = NavigationCoordinator.snapshot()
         val navigationPackage = NavigationCoordinator.selectedPackage()
         val splitSession = SplitScreenCoordinator.snapshot()
+        val selectedApps = selectedAppChoices(context)
         mutableState.value = mutableState.value.copy(
             simulcast = snapshot,
             mirrors = evaluateMirrors(context),
             selectedAppCount = SimulcastApps.selectedCount(context),
-            selectedAppLabels = selectedAppLabels(context),
+            selectedAppLabels = selectedApps.map(SimulcastAppChoice::label),
+            selectedApps = selectedApps,
             mirrorsPosition = MirrorsSettings.position(context),
             mirrorsProcessing = MirrorsSettings.processingEnabled(context),
             navigation = navigationSnapshot(navigationSession.phase, navigationSession.message, navigationSession.details),
@@ -353,7 +352,9 @@ object DenzaAppRepository {
             )
             return
         }
-        val needsSetup = !hasOverlayPermission(context) || !isAccessibilityEnabled(context)
+        val needsSetup = !hasOverlayPermission(context) ||
+            !isAccessibilityEnabled(context) ||
+            !SimulcastAccessibilityService.isConnected()
         if (!needsSetup && !forceRepair) {
             SimulcastOverlayService.startMonitor(context)
             refresh()
@@ -373,7 +374,7 @@ object DenzaAppRepository {
         )
         executor.execute {
             val failure = try {
-                LocalAdbClient(context, ADB_KEY_COMMENT).shell(buildRepairCommand(context))
+                repairSimulcastAccess(context)
                 null
             } catch (error: Exception) {
                 error
@@ -406,6 +407,12 @@ object DenzaAppRepository {
             return FeatureReducer.needsAction(
                 FeatureReducer.starting(FeatureId.SIMULCAST),
                 "Нужно разрешить доступ",
+            )
+        }
+        if (!SimulcastAccessibilityService.isConnected()) {
+            return FeatureReducer.recovering(
+                FeatureReducer.starting(FeatureId.SIMULCAST),
+                "Восстанавливаю трансляцию",
             )
         }
         return FeatureReducer.ready(
@@ -497,26 +504,39 @@ object DenzaAppRepository {
     private fun hasOverlayPermission(context: Context): Boolean = Settings.canDrawOverlays(context)
 
     private fun isAccessibilityEnabled(context: Context): Boolean {
-        val flat = Settings.Secure.getString(
+        val setting = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
         )
-        if (TextUtils.isEmpty(flat)) return false
-        return flat.contains(ACCESSIBILITY_COMPONENT) ||
-            flat.contains("dev.denza.apps/.SimulcastAccessibilityService")
+        return SimulcastAccessibilityAccess.isEnabled(setting)
     }
 
-    private fun buildRepairCommand(context: Context): String {
+    private fun repairSimulcastAccess(context: Context) {
+        val adb = LocalAdbClient(context, ADB_KEY_COMMENT)
         val packageName = shellQuote(context.packageName)
-        val service = shellQuote(ACCESSIBILITY_COMPONENT)
-        return "cmd appops set $packageName SYSTEM_ALERT_WINDOW allow" +
-            "; svc=$service" +
-            "; current=\"\$(settings get secure enabled_accessibility_services)\"" +
-            "; if [ \"\$current\" = \"null\" ] || [ -z \"\$current\" ]; then next=\"\$svc\"" +
-            "; else case \":\$current:\" in *\":\$svc:\"*) next=\"\$current\";;" +
-            " *) next=\"\$current:\$svc\";; esac; fi" +
-            "; settings put secure enabled_accessibility_services \"\$next\"" +
-            "; settings put secure accessibility_enabled 1"
+        adb.shell("cmd appops set $packageName SYSTEM_ALERT_WINDOW allow")
+
+        val current = adb.shell(
+            "settings get secure enabled_accessibility_services",
+        ).trim()
+        val withoutService = SimulcastAccessibilityAccess.withoutService(current)
+        adb.shell(
+            "settings put secure enabled_accessibility_services " +
+                shellQuote(withoutService),
+        )
+        Thread.sleep(250L)
+
+        // Re-read before enabling so another accessibility setting changed during
+        // the short rebind window is preserved.
+        val refreshed = adb.shell(
+            "settings get secure enabled_accessibility_services",
+        ).trim()
+        val withService = SimulcastAccessibilityAccess.withService(refreshed)
+        adb.shell(
+            "settings put secure enabled_accessibility_services " +
+                shellQuote(withService) +
+                "; settings put secure accessibility_enabled 1",
+        )
     }
 
     private fun friendlySetupError(error: Exception?): String {
@@ -538,6 +558,7 @@ object DenzaAppRepository {
         appendLine("DiShare=${yesNo(isInstalled(context.packageManager, DISHARE_PACKAGE))}")
         appendLine("Доступ поверх окон=${yesNo(hasOverlayPermission(context))}")
         appendLine("Управление интерфейсом=${yesNo(isAccessibilityEnabled(context))}")
+        appendLine("Сервис трансляции=${yesNo(SimulcastAccessibilityService.isConnected())}")
         appendLine("Трансляция=${enabledLabel(SimulcastIntegration.isEnabled(context))}")
         appendLine("Выбрано приложений=${SimulcastApps.selectedCount(context)}")
         appendLine("Зеркала=${enabledLabel(MirrorsSettings.isEnabled(context))}")
@@ -601,13 +622,18 @@ object DenzaAppRepository {
             )
     }
 
-    private fun selectedAppLabels(context: Context): List<String> =
+    private fun selectedAppChoices(context: Context): List<SimulcastAppChoice> =
         SimulcastApps.getSelected(context).map { packageName ->
-            runCatching {
-                context.packageManager.getApplicationLabel(
-                    context.packageManager.getApplicationInfo(packageName, 0),
-                ).toString()
-            }.getOrDefault(packageName)
+            val info = runCatching {
+                context.packageManager.getApplicationInfo(packageName, 0)
+            }.getOrNull()
+            SimulcastAppChoice(
+                packageName = packageName,
+                label = info?.let { context.packageManager.getApplicationLabel(it).toString() }
+                    ?: packageName,
+                icon = info?.let { runCatching { context.packageManager.getApplicationIcon(it) }.getOrNull() },
+                selected = true,
+            )
         }
 
     private fun isInstalled(packageManager: PackageManager, packageName: String): Boolean = try {

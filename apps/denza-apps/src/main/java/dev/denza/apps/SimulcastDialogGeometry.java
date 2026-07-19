@@ -31,6 +31,8 @@ final class SimulcastDialogGeometry {
 
     final Rect dialog;
     final Rect central;
+    /** Exact inner content bounds inside the native blue selected frame. */
+    final Rect centralContent;
     final Map<String, Rect> receivers;
     final Rect appChangeButton;
     final Rect close;
@@ -39,10 +41,12 @@ final class SimulcastDialogGeometry {
     /** Per-slot bounds of the native app row, left-to-right. Empty unless App Change is open. */
     final List<Rect> appSlots;
 
-    private SimulcastDialogGeometry(Rect dialog, Rect central, Map<String, Rect> receivers,
-            Rect appChangeButton, Rect close, Rect appList, List<Rect> appSlots) {
+    private SimulcastDialogGeometry(Rect dialog, Rect central, Rect centralContent,
+            Map<String, Rect> receivers, Rect appChangeButton, Rect close, Rect appList,
+            List<Rect> appSlots) {
         this.dialog = dialog;
         this.central = central;
+        this.centralContent = centralContent;
         this.receivers = receivers;
         this.appChangeButton = appChangeButton;
         this.close = close;
@@ -70,14 +74,28 @@ final class SimulcastDialogGeometry {
         return other != null
                 && equalRect(dialog, other.dialog)
                 && equalRect(central, other.central)
+                && equalRect(centralContent, other.centralContent)
                 && receivers.equals(other.receivers)
-                && equalRect(appChangeButton, other.appChangeButton)
                 && equalRect(close, other.close)
-                && equalRect(appList, other.appList);
+                // DiShare replaces the App Change button with a RecyclerView whose
+                // bounds differ only by the native padding. Our synthetic row is
+                // deliberately aligned to that final position, so this transition
+                // must not tear down and recreate every overlay window.
+                && approximatelyEqualRect(appList, other.appList, 24);
     }
 
     private static boolean equalRect(Rect a, Rect b) {
         return a == null ? b == null : a.equals(b);
+    }
+
+    private static boolean approximatelyEqualRect(Rect a, Rect b, int tolerancePx) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        return Math.abs(a.left - b.left) <= tolerancePx
+                && Math.abs(a.top - b.top) <= tolerancePx
+                && Math.abs(a.right - b.right) <= tolerancePx
+                && Math.abs(a.bottom - b.bottom) <= tolerancePx;
     }
 
     /**
@@ -144,9 +162,15 @@ final class SimulcastDialogGeometry {
                 receivers.put(target.receiverId, bounds);
             }
         }
+        Rect central = nodeBounds(root, "central_screen");
+        Rect centralContent = descendantNodeBounds(
+                root,
+                "central_screen",
+                "screen_card_view");
         return new SimulcastDialogGeometry(
                 dialog,
-                nodeBounds(root, "central_screen"),
+                central,
+                centralContent,
                 Collections.unmodifiableMap(receivers),
                 appChangeButton,
                 nodeBounds(root, "close"),
@@ -177,6 +201,34 @@ final class SimulcastDialogGeometry {
         return r.isEmpty() ? null : r;
     }
 
+    private static Rect descendantNodeBounds(
+            AccessibilityNodeInfo root,
+            String parentId,
+            String childId) {
+        Rect parentBounds = nodeBounds(root, parentId);
+        if (parentBounds == null) {
+            return null;
+        }
+        Rect result = null;
+        List<AccessibilityNodeInfo> children =
+                root.findAccessibilityNodeInfosByViewId(PKG + ":id/" + childId);
+        if (children != null) {
+            for (AccessibilityNodeInfo child : children) {
+                Rect bounds = new Rect();
+                child.getBoundsInScreen(bounds);
+                if (!bounds.isEmpty()
+                        && parentBounds.contains(bounds.centerX(), bounds.centerY())) {
+                    result = bounds;
+                    break;
+                }
+            }
+            for (AccessibilityNodeInfo child : children) {
+                child.recycle();
+            }
+        }
+        return result;
+    }
+
     private static List<Rect> allNodeBounds(AccessibilityNodeInfo root, String id) {
         List<Rect> out = new ArrayList<>();
         List<AccessibilityNodeInfo> nodes =
@@ -197,6 +249,7 @@ final class SimulcastDialogGeometry {
     @Override
     public String toString() {
         return "Geometry{dialog=" + dialog + ", central=" + central
+                + ", centralContent=" + centralContent
                 + ", receivers=" + receivers + ", appChange=" + appChangeButton
                 + ", slots=" + appSlots.size() + '}';
     }

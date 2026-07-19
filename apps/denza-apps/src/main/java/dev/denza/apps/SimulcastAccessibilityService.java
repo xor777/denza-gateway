@@ -2,15 +2,20 @@ package dev.denza.apps;
 
 import android.accessibilityservice.AccessibilityService;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -62,26 +67,28 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     // hue but make our replacement panel opaque so stock app icons never bleed through.
     private static final int DIALOG_BG = Color.rgb(0x15, 0x18, 0x1f);
     private static final int ROW_PANEL = Color.rgb(0x37, 0x3c, 0x49);
-    // Dark fill for the central card's inner screen, covering the stock preview.
-    private static final int CENTRAL_BG = Color.rgb(0x20, 0x24, 0x2c);
     private static final float ROW_CORNER_DP = 20f;
 
     // Native icon metrics on this layout family: 128px (64dp) icons, 152px (76dp) pitch.
     private static final float ICON_DP = 64f;
     private static final float GAP_DP = 12f;
     private static final float DRAG_SLOP_DP = 12f;
+    private static final long REFRESH_DELAY_MS = 16L;
+    private static final long DIALOG_DISAPPEAR_GRACE_MS = 320L;
     private static final long SCREEN_QUERY_RETRY_MS = 2000L;
     private static final long SCREEN_QUERY_REFRESH_MS = 30000L;
     private static final int ICON_FALLBACK_BG = Color.rgb(0x26, 0x32, 0x40);
 
+    private static volatile boolean connected;
+
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Target> targetCache = new HashMap<>();
-    private final Runnable refreshRunnable = this::refresh;
+    private final Runnable refreshRunnable = this::refreshSafely;
 
     private WindowManager windowManager;
     private DrawView drawView;
     private View rowPlateView;
-    private View centralIconPlateView;
+    private CentralIconPlateView centralIconPlateView;
     private final List<SlotView> slotViews = new ArrayList<>();
     private View centralView;
 
@@ -97,6 +104,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     private long lastScreenQueryMs;
     private int screenGeneration;
     private int appliedScreenGeneration = -1;
+    private long missingDialogSinceMs;
 
     // Gesture state shared between input windows and the painter.
     private boolean dragging;
@@ -111,6 +119,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
 
     @Override
     protected void onServiceConnected() {
+        connected = true;
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         Log.i(TAG, "service connected");
         scheduleRefresh();
@@ -135,15 +144,38 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     }
 
     @Override
+    public boolean onUnbind(Intent intent) {
+        connected = false;
+        handler.removeCallbacks(refreshRunnable);
+        tearDown();
+        return super.onUnbind(intent);
+    }
+
+    @Override
     public void onDestroy() {
+        connected = false;
         handler.removeCallbacks(refreshRunnable);
         tearDown();
         super.onDestroy();
     }
 
+    static boolean isConnected() {
+        return connected;
+    }
+
     private void scheduleRefresh() {
         handler.removeCallbacks(refreshRunnable);
-        handler.postDelayed(refreshRunnable, 60L);
+        handler.postDelayed(refreshRunnable, REFRESH_DELAY_MS);
+    }
+
+    private void refreshSafely() {
+        try {
+            refresh();
+        } catch (RuntimeException error) {
+            Log.e(TAG, "overlay refresh failed", error);
+            tearDown();
+            handler.postDelayed(refreshRunnable, SCREEN_QUERY_RETRY_MS);
+        }
     }
 
     private void refresh() {
@@ -170,9 +202,23 @@ public class SimulcastAccessibilityService extends AccessibilityService {
             root.recycle();
         }
         if (geo == null || !geo.isAppPickerOpen()) {
+            long now = System.currentTimeMillis();
+            if (drawView != null && geometry != null) {
+                if (missingDialogSinceMs == 0L) {
+                    missingDialogSinceMs = now;
+                }
+                long elapsed = now - missingDialogSinceMs;
+                if (elapsed < DIALOG_DISAPPEAR_GRACE_MS) {
+                    handler.postDelayed(
+                            refreshRunnable,
+                            DIALOG_DISAPPEAR_GRACE_MS - elapsed);
+                    return;
+                }
+            }
             tearDown();
             return;
         }
+        missingDialogSinceMs = 0L;
         boolean newDialog = geometry == null && drawView == null;
         if (newDialog) {
             availableReceivers = Collections.emptySet();
@@ -221,7 +267,8 @@ public class SimulcastAccessibilityService extends AccessibilityService {
                 screenAvailabilityConfirmed = true;
                 screenQueryRunning = false;
                 screenGeneration++;
-                Log.i(TAG, "available receivers=" + availableReceivers);
+                Log.i(TAG, "screens=" + screens
+                        + " available receivers=" + availableReceivers);
                 scheduleRefresh();
             }
 
@@ -311,13 +358,17 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         eraseBounds.union(panelBounds);
         eraseBounds.inset(-dp(20), -dp(14));
 
-        if (geo.central != null) {
+        if (geo.centralContent != null) {
+            // This is the actual native screen_card_view inside the blue selected
+            // frame. Using it directly keeps every overlay pixel within the frame.
+            centralIconBounds = new Rect(geo.centralContent);
+        } else if (geo.central != null) {
             // Cover the inner screen area of the native central card (leaving its frame
-            // visible) so the stock preview is replaced by the selected app's icon.
+            // visible). This percentage fallback is only for unknown layout families.
             Rect c = geo.central;
             int insetX = Math.round(c.width() * 0.065f);
-            int topInset = Math.round(c.height() * 0.10f);
-            int bottomInset = Math.round(c.height() * 0.03f);
+            int topInset = Math.round(c.height() * 0.11f);
+            int bottomInset = Math.round(c.height() * 0.073f);
             centralIconBounds = new Rect(c.left + insetX, c.top + topInset,
                     c.right - insetX, c.bottom - bottomInset);
         }
@@ -358,6 +409,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         }
         if (centralIconBounds != null && selectedTarget != null) {
             centralIconPlateView = new CentralIconPlateView(this);
+            centralIconPlateView.showTarget(selectedTarget);
             addPlateWindow(centralIconPlateView, centralIconBounds, PixelFormat.TRANSLUCENT);
         }
         for (Slot slot : slots) {
@@ -461,6 +513,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         panelBounds = null;
         eraseBounds = null;
         centralIconBounds = null;
+        missingDialogSinceMs = 0L;
         dragging = false;
         downTarget = null;
         dragTarget = null;
@@ -521,6 +574,9 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         } else if (downFromRow && downTarget != null) {
             // Tap on a row icon selects it; its icon appears on the central screen.
             selectedTarget = downTarget;
+            if (centralIconPlateView != null) {
+                centralIconPlateView.showTarget(selectedTarget);
+            }
         }
         cancelDrag();
         invalidateOverlayViews();
@@ -544,9 +600,81 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         if (cached != null) {
             return cached;
         }
-        Target target = new Target(packageName, loadLabel(packageName), loadIcon(packageName));
+        Drawable icon = loadIcon(packageName);
+        Target target = new Target(
+                packageName,
+                loadLabel(packageName),
+                icon,
+                extractAccentColor(icon));
         targetCache.put(packageName, target);
         return target;
+    }
+
+    private int extractAccentColor(Drawable icon) {
+        if (icon == null) {
+            return Color.rgb(0x38, 0x78, 0xa8);
+        }
+        final int sampleSize = 32;
+        Bitmap bitmap = Bitmap.createBitmap(
+                sampleSize,
+                sampleSize,
+                Bitmap.Config.ARGB_8888);
+        Rect oldBounds = icon.copyBounds();
+        try {
+            Canvas sample = new Canvas(bitmap);
+            icon.setBounds(0, 0, sampleSize, sampleSize);
+            icon.draw(sample);
+            double red = 0;
+            double green = 0;
+            double blue = 0;
+            double totalWeight = 0;
+            float[] hsv = new float[3];
+            for (int y = 0; y < sampleSize; y++) {
+                for (int x = 0; x < sampleSize; x++) {
+                    int color = bitmap.getPixel(x, y);
+                    int alpha = Color.alpha(color);
+                    if (alpha < 48) {
+                        continue;
+                    }
+                    Color.colorToHSV(color, hsv);
+                    if (hsv[1] < 0.08f || hsv[2] < 0.10f) {
+                        continue;
+                    }
+                    double weight = (alpha / 255.0)
+                            * (0.35 + hsv[1] * 1.65)
+                            * (0.55 + hsv[2] * 0.45);
+                    red += Color.red(color) * weight;
+                    green += Color.green(color) * weight;
+                    blue += Color.blue(color) * weight;
+                    totalWeight += weight;
+                }
+            }
+            if (totalWeight < 1.0) {
+                return Color.rgb(0x38, 0x78, 0xa8);
+            }
+            int sampled = Color.rgb(
+                    (int) Math.round(red / totalWeight),
+                    (int) Math.round(green / totalWeight),
+                    (int) Math.round(blue / totalWeight));
+            Color.colorToHSV(sampled, hsv);
+            hsv[1] = Math.max(0.48f, hsv[1]);
+            hsv[2] = Math.max(0.52f, Math.min(0.78f, hsv[2]));
+            return Color.HSVToColor(hsv);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "icon colour sampling failed", error);
+            return Color.rgb(0x38, 0x78, 0xa8);
+        } finally {
+            icon.setBounds(oldBounds);
+            bitmap.recycle();
+        }
+    }
+
+    private int tone(int color, float saturation, float value) {
+        float[] hsv = new float[3];
+        Color.colorToHSV(color, hsv);
+        hsv[1] = Math.max(0f, Math.min(1f, saturation));
+        hsv[2] = Math.max(0f, Math.min(1f, value));
+        return Color.HSVToColor(hsv);
     }
 
     private Drawable loadIcon(String packageName) {
@@ -609,11 +737,13 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         final String packageName;
         final String label;
         final Drawable icon;
+        final int accentColor;
 
-        Target(String packageName, String label, Drawable icon) {
+        Target(String packageName, String label, Drawable icon, int accentColor) {
             this.packageName = packageName;
             this.label = label;
             this.icon = icon;
+            this.accentColor = accentColor;
         }
     }
 
@@ -730,6 +860,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     private final class CentralIconPlateView extends View {
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private Target displayedTarget;
 
         CentralIconPlateView(Context context) {
             super(context);
@@ -738,23 +869,52 @@ public class SimulcastAccessibilityService extends AccessibilityService {
             text.setTextAlign(Paint.Align.CENTER);
         }
 
+        void showTarget(Target target) {
+            displayedTarget = target;
+            int accent = target == null
+                    ? Color.rgb(0x38, 0x78, 0xa8)
+                    : target.accentColor;
+            GradientDrawable background = new GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    new int[] {
+                            tone(accent, 0.62f, 0.42f),
+                            tone(accent, 0.72f, 0.16f),
+                    });
+            background.setCornerRadius(dp(10));
+            background.setStroke(dp(1), Color.argb(42, 255, 255, 255));
+            setBackground(background);
+            invalidate();
+        }
+
         @Override
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
-            // Opaque dark fill replaces the stock central preview, then the selected
-            // app's icon centered on it — reads as "this app on the source screen".
+            // Use a restrained palette derived from the current app icon. The darker
+            // tones keep every icon readable while making the source card feel like a
+            // deliberate app-specific surface instead of a black placeholder.
+            int accent = displayedTarget == null
+                    ? Color.rgb(0x38, 0x78, 0xa8)
+                    : displayedTarget.accentColor;
             fill.setStyle(Paint.Style.FILL);
-            fill.setColor(CENTRAL_BG);
-            float r = dp(12);
-            canvas.drawRoundRect(new RectF(0, 0, getWidth(), getHeight()), r, r, fill);
-            if (selectedTarget == null) {
+            float r = dp(10);
+            RectF card = new RectF(0, 0, getWidth(), getHeight());
+            fill.setShader(new RadialGradient(
+                    getWidth() * 0.52f,
+                    getHeight() * 0.48f,
+                    Math.min(getWidth(), getHeight()) * 0.62f,
+                    Color.argb(92, Color.red(accent), Color.green(accent), Color.blue(accent)),
+                    Color.TRANSPARENT,
+                    Shader.TileMode.CLAMP));
+            canvas.drawRoundRect(card, r, r, fill);
+            fill.setShader(null);
+            if (displayedTarget == null) {
                 return;
             }
-            float size = Math.min(getWidth(), getHeight()) * 0.5f;
+            float size = Math.min(getWidth(), getHeight()) * 0.56f;
             float left = (getWidth() - size) / 2f;
             float top = (getHeight() - size) / 2f;
             float alpha = (dragging && !downFromRow) ? 0.4f : 1f;
-            drawIcon(canvas, fill, text, selectedTarget,
+            drawIcon(canvas, fill, text, displayedTarget,
                     new RectF(left, top, left + size, top + size), alpha);
         }
     }
