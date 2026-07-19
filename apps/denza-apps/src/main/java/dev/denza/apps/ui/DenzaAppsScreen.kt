@@ -90,6 +90,7 @@ private val DisabledSurface = Color(0xFF181A1B)
 private val DisabledElevated = Color(0xFF222426)
 private val DisabledInk = Color(0xFFB7BCBE)
 private val DisabledMuted = Color(0xFF7D8487)
+private const val SHOW_NAVIGATION_AUTOMATIC = false
 
 @Composable
 fun DenzaAppsRoot(
@@ -163,22 +164,24 @@ fun DenzaAppsRoot(
                                     )
                                 }
                             }
-                            Spacer(Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column {
-                                    Text("Авто", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                                    Text("По режиму приборки", color = Muted, fontSize = 11.sp)
+                            if (SHOW_NAVIGATION_AUTOMATIC) {
+                                Spacer(Modifier.height(10.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text("Авто", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                        Text("По режиму приборки", color = Muted, fontSize = 11.sp)
+                                    }
+                                    Spacer(Modifier.weight(1f))
+                                    Switch(
+                                        checked = uiState.navigationAutomatic,
+                                        onCheckedChange = onNavigationAutomatic,
+                                        enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                            uiState.navigation.status != FeatureStatus.RECOVERING,
+                                    )
                                 }
-                                Spacer(Modifier.weight(1f))
-                                Switch(
-                                    checked = uiState.navigationAutomatic,
-                                    onCheckedChange = onNavigationAutomatic,
-                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                        uiState.navigation.status != FeatureStatus.RECOVERING,
-                                )
                             }
                             Spacer(Modifier.height(10.dp))
                             Row(
@@ -1015,7 +1018,7 @@ private fun SupportDialog(
                     )
                     HelpSection(
                         title = "Навигация",
-                        text = "Выберите навигатор и его положение, затем нажмите «На приборку». С «Авто» он сам появляется в режиме Map и убирается при возврате в ADAS.",
+                        text = "Выберите навигатор и его положение, затем нажмите «На приборку». Кнопка «Вернуть» перенесёт его обратно на основной экран.",
                     )
                     HelpSection(
                         title = "Разделённый экран",
