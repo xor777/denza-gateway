@@ -37,7 +37,7 @@ class ClusterLayoutTest {
             ClusterMapLayout(2560, 720, ClusterMapPlacement.LEFT).surfaceBounds,
         )
         assertEquals(
-            ClusterBounds(1537, 100, 2560, 609),
+            ClusterBounds(1537, 95, 2560, 619),
             ClusterMapLayout(2560, 720, ClusterMapPlacement.RIGHT).surfaceBounds,
         )
     }

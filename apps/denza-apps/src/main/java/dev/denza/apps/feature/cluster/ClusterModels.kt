@@ -90,11 +90,16 @@ data class ClusterMapLayout(
         displayHeight,
         cameraPosition,
     ).cameraBounds
-    private val sideBottom = (displayHeight * 84 / 100 + displayHeight / 144)
+    private val baseSideBottom = (displayHeight * 84 / 100 + displayHeight / 144)
         .coerceAtLeast(1)
         .coerceAtMost(displayHeight)
+    private val sideBottom = if (placement == ClusterMapPlacement.RIGHT) {
+        (baseSideBottom + 10).coerceAtMost(displayHeight)
+    } else {
+        baseSideBottom
+    }
     private val sideTop = if (placement == ClusterMapPlacement.RIGHT) {
-        displayHeight * 14 / 100
+        (displayHeight * 14 / 100 - 5).coerceAtLeast(0)
     } else {
         0
     }
