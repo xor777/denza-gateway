@@ -129,8 +129,12 @@ public final class ClusterProxyMain {
         boolean returnTask(String packageName, int taskId, boolean focusNavigation) {
             enforceTask(packageName, taskId);
             int currentDisplay = taskDisplayId(packageName, taskId);
-            if (currentDisplay > 0 && !moveTask(packageName, taskId, 0)) return false;
+            // Clear the virtual-display bounds before changing displays. Clearing
+            // them after the move sends two rapid configuration changes on the
+            // IVI (virtual size, then fullscreen); 2GIS exits between those two
+            // relaunches and Android removes its now-empty task.
             if (!setTaskBounds(packageName, taskId, 0, 0, 0, 0)) return false;
+            if (currentDisplay > 0 && !moveTask(packageName, taskId, 0)) return false;
             return focusNavigation
                     ? focusTask(packageName, taskId)
                     : backgroundTask(packageName, taskId);

@@ -9,6 +9,7 @@ import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterMapPlacement
 import dev.denza.apps.feature.cluster.ClusterSceneService
 import dev.denza.apps.feature.cluster.MapSurfaceConsumer
+import dev.denza.apps.feature.split.SplitScreenCoordinator
 import dev.denza.disharebridge.LocalAdbClient
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -31,6 +32,7 @@ object NavigationCoordinator {
     private var automaticProjectionActive = false
     private var pendingAutomaticProjection = false
     private var pendingAutomaticReturn = false
+    private var pendingProjectionAfterOpen = false
 
     fun initialize(context: Context, onStateChanged: () -> Unit) {
         val app = context.applicationContext
@@ -85,11 +87,10 @@ object NavigationCoordinator {
             onStateChanged?.invoke()
             if (!wasProjected) return@execute
 
-            returnToCentralDisplay(focusTask = false)
             val shouldReproject = !wasAutomatic ||
                 (automaticEnabled && lastStockMapVisible == true)
             automaticProjectionActive = wasAutomatic && shouldReproject
-            if (shouldReproject) projectToCluster()
+            returnToCentralDisplay(focusTask = false, reprojectAfterReturn = shouldReproject)
         }
     }
 
@@ -105,6 +106,7 @@ object NavigationCoordinator {
             automaticProjectionActive = false
             pendingAutomaticProjection = false
             pendingAutomaticReturn = false
+            pendingProjectionAfterOpen = false
             if (session.phase == NavigationPhase.PROJECTED) {
                 returnToCentralDisplay(focusTask = false)
             }
@@ -135,6 +137,7 @@ object NavigationCoordinator {
     }
 
     fun performPrimaryAction() {
+        SplitScreenCoordinator.bypassExternalTaskMoves()
         executor.execute {
             when (session.phase) {
                 NavigationPhase.PROJECTED -> {
@@ -176,10 +179,12 @@ object NavigationCoordinator {
     }
 
     private fun openSelectedApp() {
+        SplitScreenCoordinator.bypassExternalTaskMoves()
         val app = context ?: return
         val packageName = selectedPackage
         val launch = app.packageManager.getLaunchIntentForPackage(packageName)
         if (launch == null) {
+            pendingProjectionAfterOpen = false
             update(
                 NavigationSession(
                     phase = NavigationPhase.NEEDS_ACTION,
@@ -195,6 +200,7 @@ object NavigationCoordinator {
             app.startActivity(launch, options.toBundle())
             executor.schedule({ discoverLaunchedTask(5) }, 900L, TimeUnit.MILLISECONDS)
         } catch (error: RuntimeException) {
+            pendingProjectionAfterOpen = false
             update(
                 session.copy(
                     phase = NavigationPhase.NEEDS_ACTION,
@@ -212,7 +218,10 @@ object NavigationCoordinator {
             val task = NavigationProxyClient.findAllowedTask(app, packageName)
             if (task >= 0) {
                 update(NavigationSession(taskId = task))
-                if (
+                if (pendingProjectionAfterOpen) {
+                    pendingProjectionAfterOpen = false
+                    projectToCluster()
+                } else if (
                     pendingAutomaticProjection &&
                     automaticEnabled &&
                     lastStockMapVisible == true
@@ -229,6 +238,7 @@ object NavigationCoordinator {
                 )
             } else {
                 pendingAutomaticProjection = false
+                pendingProjectionAfterOpen = false
                 update(
                     NavigationSession(
                         phase = NavigationPhase.NEEDS_ACTION,
@@ -238,6 +248,7 @@ object NavigationCoordinator {
             }
         } catch (error: Exception) {
             pendingAutomaticProjection = false
+            pendingProjectionAfterOpen = false
             update(
                 NavigationSession(
                     phase = NavigationPhase.NEEDS_ACTION,
@@ -249,9 +260,28 @@ object NavigationCoordinator {
     }
 
     private fun projectToCluster() {
+        SplitScreenCoordinator.bypassExternalTaskMoves()
         val app = context ?: return
-        val taskId = session.taskId ?: return
         val packageName = selectedPackage
+        val taskId = try {
+            NavigationProxyClient.findAllowedTask(app, packageName)
+        } catch (error: Exception) {
+            update(
+                session.copy(
+                    phase = NavigationPhase.NEEDS_ACTION,
+                    message = friendlyProxyError(error),
+                    details = error.toString(),
+                ),
+            )
+            return
+        }
+        if (taskId < 0) {
+            pendingProjectionAfterOpen = true
+            update(NavigationSession(message = "Повторно открываю навигатор"))
+            openSelectedApp()
+            return
+        }
+        if (session.taskId != taskId) update(session.copy(taskId = taskId))
         val selected = ClusterDisplayResolver.resolve(app)
         if (selected !is ClusterDisplaySelection.Selected) {
             update(
@@ -337,7 +367,11 @@ object NavigationCoordinator {
         })
     }
 
-    private fun returnToCentralDisplay(focusTask: Boolean = true) {
+    private fun returnToCentralDisplay(
+        focusTask: Boolean = true,
+        reprojectAfterReturn: Boolean = false,
+    ) {
+        SplitScreenCoordinator.bypassExternalTaskMoves()
         val app = context ?: return
         val taskId = session.taskId
         val packageName = selectedPackage
@@ -357,7 +391,53 @@ object NavigationCoordinator {
             NavigationProxyClient.releaseVirtualDisplay()
             ClusterSceneService.hideMap(app)
             update(NavigationSession(taskId = taskId))
+            if (focusTask || reprojectAfterReturn) {
+                executor.schedule(
+                    {
+                        settleReturnedTask(
+                            packageName = packageName,
+                            focusTask = focusTask,
+                            reprojectAfterReturn = reprojectAfterReturn,
+                        )
+                    },
+                    900L,
+                    TimeUnit.MILLISECONDS,
+                )
+            }
         }
+    }
+
+    private fun settleReturnedTask(
+        packageName: String,
+        focusTask: Boolean,
+        reprojectAfterReturn: Boolean,
+    ) {
+        val app = context ?: return
+        if (selectedPackage != packageName) return
+        val liveTask = try {
+            NavigationProxyClient.findAllowedTask(app, packageName)
+        } catch (error: Exception) {
+            update(
+                NavigationSession(
+                    phase = NavigationPhase.NEEDS_ACTION,
+                    message = friendlyProxyError(error),
+                    details = error.toString(),
+                ),
+            )
+            return
+        }
+        if (liveTask >= 0) {
+            update(NavigationSession(taskId = liveTask))
+            if (reprojectAfterReturn) projectToCluster()
+            return
+        }
+        if (!focusTask && !reprojectAfterReturn) {
+            update(NavigationSession())
+            return
+        }
+        pendingProjectionAfterOpen = reprojectAfterReturn
+        update(NavigationSession(message = "Повторно открываю навигатор"))
+        openSelectedApp()
     }
 
     private fun verifyActiveSession() {
@@ -387,6 +467,7 @@ object NavigationCoordinator {
         automaticProjectionActive = false
         pendingAutomaticProjection = false
         pendingAutomaticReturn = false
+        pendingProjectionAfterOpen = false
         update(NavigationRecovery.proxyLost(previous))
         ClusterSceneService.hideMap(app)
         executor.schedule({
