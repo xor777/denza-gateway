@@ -68,11 +68,11 @@ The persisted map placement has four live-switchable layouts on the verified
 
 - **Full** uses the whole display at `272 dpi`. Its shade leaves 5 percent map
   visibility at the top center, fades fully clear by `272 px`, stays clear
-  through the middle, then fades back to black over `60 px` above a `90 px`
-  solid-black footer. Soft alpha cutouts expose the map in both top corners and
-  at bottom center: left/right top radii are `614/512 px`, their common depth is
-  `272 px`, and the bottom radius is `600 px` with its center `120 px` above the
-  lower edge;
+  through the middle, then fades to 5 percent map visibility over `60 px` above
+  a `90 px`, 95-percent-black footer. Soft alpha cutouts expose the map in both
+  top corners and at bottom center: left/right top radii are `614/512 px`, their
+  common depth is `272 px`, and the bottom radius is `600 px` with its center
+  `120 px` above the lower edge;
 - **Center** uses `Rect(768, 0 - 1791, 720)` at `320 dpi`, with a stronger
   `130 dp` top gradient peaking at alpha `250`;
 - **Left** uses `Rect(0, 0 - 1023, 609)` at `272 dpi`, with an alpha-`250`

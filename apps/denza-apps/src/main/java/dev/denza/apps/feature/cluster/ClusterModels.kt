@@ -124,7 +124,7 @@ data class ClusterMapLayout(
         ClusterMapPlacement.LEFT -> 250
         ClusterMapPlacement.RIGHT -> 0
     }
-    val shadeBottomAlpha: Int = if (placement == ClusterMapPlacement.FULL) 255 else 0
+    val shadeBottomAlpha: Int = if (placement == ClusterMapPlacement.FULL) 242 else 0
     val shadeBottomTopAlpha: Int = if (placement == ClusterMapPlacement.FULL) 242 else 0
     val shadeBottomFadePx: Int = if (placement == ClusterMapPlacement.FULL) 60 else 0
     val shadeBottomSolidPx: Int = if (placement == ClusterMapPlacement.FULL) 90 else 0

@@ -53,7 +53,7 @@ class ClusterLayoutTest {
         assertEquals(true, full.shadeBottom)
         assertEquals(90, full.shadeHeightDp)
         assertEquals(204, full.shadeTopAlpha)
-        assertEquals(255, full.shadeBottomAlpha)
+        assertEquals(242, full.shadeBottomAlpha)
         assertEquals(242, full.shadeBottomTopAlpha)
         assertEquals(60, full.shadeBottomFadePx)
         assertEquals(90, full.shadeBottomSolidPx)
