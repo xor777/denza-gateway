@@ -1004,34 +1004,7 @@ private fun SupportDialog(
                 Spacer(Modifier.height(22.dp))
                 if (!showTechnical) {
                     Text(
-                        "Каждая карточка работает отдельно. Включайте только то, что нужно сейчас.",
-                        color = Muted,
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    HelpSection(
-                        title = "Трансляция",
-                        text = "Нажмите «Выбрать», отметьте до шести приложений и затем «Запустить». Откроется штатное меню выбора экрана.",
-                    )
-                    HelpSection(
-                        title = "Зеркала",
-                        text = "Включите тумблер — камеры будут появляться вместе с поворотниками. «Проверить камеры» показывает только их расположение.",
-                    )
-                    HelpSection(
-                        title = "Навигация",
-                        text = "Выберите навигатор и его положение, затем нажмите «На приборку». Кнопка «Вернуть» перенесёт его обратно на основной экран.",
-                    )
-                    HelpSection(
-                        title = "Разделённый экран",
-                        text = "Включите режим и запускайте приложения из штатного экрана с двумя окнами. Машина сохранит свой разделитель и управление окнами.",
-                    )
-                    Text(
-                        "Важно: между левым и правым поворотником делайте короткую паузу.",
-                        color = Warning,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "Если машина просит разрешить ADB, поставьте «Всегда разрешать» и нажмите «Разрешить».",
+                        "здесь пока ничего нет\nhttps://github.com/xor777/denza-lab",
                         color = Muted,
                     )
                 } else {
@@ -1121,12 +1094,4 @@ private fun DiagnosticRow(label: String, value: String) {
             )
         }
     }
-}
-
-@Composable
-private fun HelpSection(title: String, text: String) {
-    Text(title, color = Ink, fontWeight = FontWeight.SemiBold)
-    Spacer(Modifier.height(4.dp))
-    Text(text, color = Muted)
-    Spacer(Modifier.height(14.dp))
 }
