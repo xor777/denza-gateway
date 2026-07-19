@@ -113,18 +113,25 @@ hard-coded.
 
 The compact **Split screen** switch enables contextual routing through the
 shared local ADB client. Normal launches outside the stock split scene remain
-fullscreen. While both stock roots are visible, Yandex Navigator is assigned
-to the large left root, while Yandex Music and Apple Music are assigned to the
-small right root. The stock launcher initially starts these third-party apps as
-fullscreen tasks even when their icon is tapped inside the split scene; the
-router recognizes that immediate split-to-fullscreen transition, reparents the
+fullscreen. The stock application picker stays in one root while the other is
+initially empty. Its first selection is moved into the empty root; its second
+selection replaces the picker in the remaining root. The choice is derived
+from the foreground task transition rather than an application allowlist, so an
+already-running task is handled the same way as a new task. The router accepts
+only the immediate transition from the visible picker session, reparents the
 task with fixed `am stack move-task` and `am task resize` commands, and leaves
 the stock divider and controls in charge.
 
-Turning the switch off moves supported tasks back to the fullscreen root that
-contains Denza Apps and restores the stock launcher/map anchors. No app is
+On 2026-07-19 this sequence was live-verified with Yandex Navigator selected
+first and RUTUBE second. Navigator appeared in the initially empty small right
+root while the picker stayed open in the large left root; RUTUBE then replaced
+the picker on the left. Both applications remained visible and interactive in
+the stock split scene.
+
+Turning the switch off moves routed non-shell tasks back to the fullscreen root
+that contains Denza Apps and restores the stock launcher/map anchors. No app is
 started by toggling the switch, and the card intentionally does not expose the
-package rules in its text.
+routing details in its text.
 
 ## OpenBYD research boundary
 

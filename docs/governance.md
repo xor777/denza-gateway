@@ -141,9 +141,14 @@ package into product code):
 - A normal launch outside the visible stock split scene must remain fullscreen.
   Route only the immediate launch context that originated from the stock split
   scene.
-- Keep the package-to-pane mapping allowlisted and internal. Split commands are
-  fixed `am stack move-task` / `am task resize` operations through the shared
-  local ADB client; do not expose arbitrary shell text to the UI.
+- Treat the visible stock application picker as a short two-step session. Route
+  only the foreground task created or resumed by the immediate picker action:
+  first to the empty anchored pane, then to the pane that contained the picker.
+  Do not use app package names to choose a pane.
+- Split commands remain fixed `am stack move-task` / `am task resize`
+  operations through the shared local ADB client; do not expose arbitrary shell
+  text to the UI. Exclude Denza Apps and the stock picker/pane packages from
+  candidate routing.
 - Toggling the feature must not launch an app. Turning it off must return routed
   tasks to the current fullscreen root and restore the stock pane anchors.
 

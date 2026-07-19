@@ -3,46 +3,60 @@ package dev.denza.apps.feature.split
 internal class SplitShellRouter(
     private val shell: (String) -> String,
 ) {
-    private val knownTaskIds = mutableSetOf<Int>()
+    private var session: SplitSelectionSession? = null
     private var splitWasVisible = false
 
     fun tick(): Boolean {
         val snapshot = SplitTaskSnapshot.parse(shell("am stack list"))
-        val left = snapshot.pane(LEFT_ANCHOR) ?: return leaveSplit()
-        val right = snapshot.pane(RIGHT_ANCHOR) ?: return leaveSplit()
-        val splitVisible = left.visible && right.visible
-        if (!splitVisible) {
-            if (splitWasVisible && routeForegroundLaunch(snapshot, left, right)) return true
-            return leaveSplit()
+        val pickerPane = snapshot.pane(PICKER_ANCHOR) ?: return leaveSplit()
+        val freePane = snapshot.pane(FREE_PANE_ANCHOR) ?: return leaveSplit()
+        val splitVisible = pickerPane.visible && freePane.visible
+
+        if (splitVisible) {
+            observeVisibleSplit(pickerPane, freePane)
+            splitWasVisible = true
+            return true
         }
 
-        val initialSnapshot = !splitWasVisible
-        if (initialSnapshot) knownTaskIds.clear()
-        route(snapshot, left, NAVIGATOR_PACKAGE, initialSnapshot)
-        route(snapshot, right, YANDEX_MUSIC_PACKAGE, initialSnapshot)
-        route(snapshot, right, APPLE_MUSIC_PACKAGE, initialSnapshot)
-        splitWasVisible = true
-        return true
+        if (splitWasVisible && routeForegroundLaunch(snapshot, pickerPane, freePane)) {
+            return true
+        }
+        return leaveSplit()
+    }
+
+    private fun observeVisibleSplit(
+        pickerPane: SplitRootTask,
+        freePane: SplitRootTask,
+    ) {
+        val pickerVisible = pickerPane.topPackageName in PICKER_PACKAGES
+        if (!pickerVisible || session != null) return
+
+        val freePaneIsEmpty = freePane.topPackageName == FREE_PANE_ANCHOR
+        session = SplitSelectionSession(
+            nextPane = if (freePaneIsEmpty) SplitPane.FREE else SplitPane.PICKER,
+        )
     }
 
     private fun routeForegroundLaunch(
         snapshot: SplitTaskSnapshot,
-        left: SplitRootTask,
-        right: SplitRootTask,
+        pickerPane: SplitRootTask,
+        freePane: SplitRootTask,
     ): Boolean {
-        val targets = listOf(
-            NAVIGATOR_PACKAGE to left,
-            YANDEX_MUSIC_PACKAGE to right,
-            APPLE_MUSIC_PACKAGE to right,
-        )
-        for ((packageName, pane) in targets) {
-            val task = snapshot.task(packageName) ?: continue
-            if (!task.isTop || task.rootId == pane.id) continue
-            run("am stack move-task ${task.id} ${pane.id} true")
-            resize(task.id, pane.bounds)
-            return true
+        val activeSession = session ?: return false
+        val nextPane = activeSession.nextPane ?: return false
+        val candidate = snapshot.foregroundTaskOutside(
+            paneIds = setOf(pickerPane.id, freePane.id),
+            excludedPackages = SHELL_PACKAGES,
+        ) ?: return false
+        val destination = if (nextPane == SplitPane.FREE) freePane else pickerPane
+
+        run("am stack move-task ${candidate.id} ${destination.id} true")
+        resize(candidate.id, destination.bounds)
+        activeSession.nextPane = when (nextPane) {
+            SplitPane.FREE -> SplitPane.PICKER
+            SplitPane.PICKER -> null
         }
-        return false
+        return true
     }
 
     fun disable() {
@@ -50,46 +64,34 @@ internal class SplitShellRouter(
         val fullRoot = snapshot.roots.firstOrNull { root ->
             root.displayId == 0 && root.tasks.any { it.packageName == DENZA_APPS_PACKAGE }
         }
+        val pickerPane = snapshot.pane(PICKER_ANCHOR)
+        val freePane = snapshot.pane(FREE_PANE_ANCHOR)
+
         if (fullRoot != null) {
-            for (packageName in TARGET_PACKAGES) {
-                val task = snapshot.task(packageName) ?: continue
-                if (task.rootId == fullRoot.id) continue
-                run("am stack move-task ${task.id} ${fullRoot.id} false")
-                resize(task.id, fullRoot.bounds)
-            }
+            listOfNotNull(pickerPane, freePane)
+                .flatMap(SplitRootTask::tasks)
+                .distinctBy(SplitTask::id)
+                .filterNot { it.packageName in SHELL_PACKAGES }
+                .forEach { task ->
+                    run("am stack move-task ${task.id} ${fullRoot.id} false")
+                    resize(task.id, fullRoot.bounds)
+                }
         }
 
-        snapshot.pane(LEFT_ANCHOR)?.let { pane ->
-            pane.tasks.firstOrNull { it.packageName == LEFT_ANCHOR }?.let { anchor ->
-                run("am stack move-task ${anchor.id} ${pane.id} true")
-                resize(anchor.id, pane.bounds)
+        pickerPane?.tasks
+            ?.firstOrNull { it.packageName == PICKER_ANCHOR }
+            ?.let { anchor ->
+                run("am stack move-task ${anchor.id} ${pickerPane.id} true")
+                resize(anchor.id, pickerPane.bounds)
             }
-        }
-        snapshot.pane(RIGHT_ANCHOR)?.let { pane ->
-            pane.tasks.firstOrNull { it.packageName == RIGHT_ANCHOR }?.let { anchor ->
-                run("am stack move-task ${anchor.id} ${pane.id} true")
-                resize(anchor.id, pane.bounds)
+        freePane?.tasks
+            ?.firstOrNull { it.packageName == FREE_PANE_ANCHOR }
+            ?.let { anchor ->
+                run("am stack move-task ${anchor.id} ${freePane.id} true")
+                resize(anchor.id, freePane.bounds)
             }
-        }
-        knownTaskIds.clear()
+        session = null
         splitWasVisible = false
-    }
-
-    private fun route(
-        snapshot: SplitTaskSnapshot,
-        pane: SplitRootTask,
-        packageName: String,
-        initialSnapshot: Boolean,
-    ) {
-        val task = snapshot.task(packageName) ?: return
-        val firstSeen = knownTaskIds.add(task.id)
-        if (task.rootId != pane.id) {
-            val toTop = task.isTop || (!initialSnapshot && firstSeen)
-            run("am stack move-task ${task.id} ${pane.id} $toTop")
-        }
-        if (task.rootId != pane.id || task.bounds != pane.bounds) {
-            resize(task.id, pane.bounds)
-        }
     }
 
     private fun resize(taskId: Int, bounds: SplitBounds) {
@@ -105,19 +107,24 @@ internal class SplitShellRouter(
     }
 
     private fun leaveSplit(): Boolean {
-        if (splitWasVisible) knownTaskIds.clear()
+        session = null
         splitWasVisible = false
         return false
     }
 
+    private data class SplitSelectionSession(
+        var nextPane: SplitPane?,
+    )
+
+    private enum class SplitPane { FREE, PICKER }
+
     private companion object {
         const val DENZA_APPS_PACKAGE = "dev.denza.apps"
-        const val LEFT_ANCHOR = "com.android.launcher3"
-        const val RIGHT_ANCHOR = "com.byd.launchermap"
-        const val NAVIGATOR_PACKAGE = "ru.yandex.yandexnavi"
-        const val YANDEX_MUSIC_PACKAGE = "ru.yandex.music"
-        const val APPLE_MUSIC_PACKAGE = "com.apple.android.music"
-        val TARGET_PACKAGES = listOf(NAVIGATOR_PACKAGE, YANDEX_MUSIC_PACKAGE, APPLE_MUSIC_PACKAGE)
+        const val PICKER_ANCHOR = "com.android.launcher3"
+        const val PICKER_CONTENT = "com.byd.auto_photo"
+        const val FREE_PANE_ANCHOR = "com.byd.launchermap"
+        val PICKER_PACKAGES = setOf(PICKER_ANCHOR, PICKER_CONTENT)
+        val SHELL_PACKAGES = PICKER_PACKAGES + FREE_PANE_ANCHOR + DENZA_APPS_PACKAGE
     }
 }
 
@@ -146,6 +153,9 @@ internal data class SplitRootTask(
     val tasks: List<SplitTask>,
 ) {
     val visible: Boolean get() = tasks.any(SplitTask::visible)
+    val topPackageName: String?
+        get() = tasks.firstOrNull(SplitTask::isTop)?.packageName
+            ?: tasks.firstNotNullOfOrNull(SplitTask::topPackageName)
 }
 
 internal data class SplitTaskSnapshot(val roots: List<SplitRootTask>) {
@@ -153,10 +163,13 @@ internal data class SplitTaskSnapshot(val roots: List<SplitRootTask>) {
         root.displayId == 0 && root.tasks.any { it.packageName == anchorPackage }
     }
 
-    fun task(packageName: String): SplitTask? = roots.asSequence()
-        .filter { it.displayId == 0 }
+    fun foregroundTaskOutside(
+        paneIds: Set<Int>,
+        excludedPackages: Set<String>,
+    ): SplitTask? = roots.asSequence()
+        .filter { it.displayId == 0 && it.id !in paneIds }
         .flatMap { it.tasks.asSequence() }
-        .firstOrNull { it.packageName == packageName }
+        .firstOrNull { it.isTop && it.packageName !in excludedPackages }
 
     companion object {
         private val rootPattern = Regex(

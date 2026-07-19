@@ -129,7 +129,7 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 | `feature.cluster` | Fail-closed cluster display resolver, real-display geometry, and the shared map-base/camera-overlay scene. No fallback display IDs. |
 | `feature.mirrors` | Migrated AVC renderer and window monitor. Uses the shared local ADB client, keeps verified Mirrors geometry/image treatment, and has no probe dependency. |
 | `feature.navigation` | App-owned virtual display, fixed-operation shell task commands, a dynamically filtered navigation picker, persisted full/left/center/right placement, and optional memory-only auto-follow of the stock cluster Map mode. Projection, live layout switching, and return are live-car verified; no arbitrary shell execution is exposed. |
-| `feature.split` | Contextual router for the stock BYD `byd-freeform` roots. Normal launches stay fullscreen; launches originating from the visible stock split scene are assigned to allowlisted left/right panes through fixed local-ADB commands. |
+| `feature.split` | Contextual two-step router for the stock BYD `byd-freeform` roots. Normal launches stay fullscreen; from the stock application picker, the first selected app fills the empty pane and the second replaces the picker through fixed local-ADB commands. |
 
 ### `libraries/dishare-bridge/`
 
