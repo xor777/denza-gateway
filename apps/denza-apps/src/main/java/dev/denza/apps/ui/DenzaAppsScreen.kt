@@ -1,5 +1,6 @@
 package dev.denza.apps.ui
 
+import android.graphics.drawable.Drawable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,7 +32,7 @@ import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Map
-import androidx.compose.material.icons.outlined.Splitscreen
+import androidx.compose.material.icons.outlined.VerticalSplit
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -115,68 +117,145 @@ fun DenzaAppsRoot(
     var showSupport by remember { mutableStateOf(false) }
     var showTechnical by remember { mutableStateOf(false) }
     var titleTaps by remember { mutableIntStateOf(0) }
-    val selectedAppNames = uiState.selectedAppLabels
-        .asSequence()
-        .joinToString(", ")
-        .ifBlank { "Список пока пуст" }
+    val selectedNavigationApp = uiState.navigationAppChoices.firstOrNull { it.selected }
 
     DenzaTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Background) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(horizontal = 48.dp, vertical = 20.dp),
-            ) {
-                CompactToolbar(onSupport = { showSupport = true })
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(horizontal = 48.dp, vertical = 14.dp),
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    ) {
+                    FeatureCard(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Outlined.Map,
+                        title = "Навигация",
+                        subtitle = uiState.navigationAppLabel,
+                        subtitleIcon = selectedNavigationApp?.icon,
+                        subtitleIconKey = selectedNavigationApp?.packageName,
+                        snapshot = uiState.navigation,
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                ClusterMapPlacement.entries.forEach { placement ->
+                                    NavigationPlacementChoice(
+                                        modifier = Modifier.weight(1f),
+                                        text = when (placement) {
+                                            ClusterMapPlacement.FULL -> "Полный"
+                                            ClusterMapPlacement.LEFT -> "Слева"
+                                            ClusterMapPlacement.CENTER -> "Центр"
+                                            ClusterMapPlacement.RIGHT -> "Справа"
+                                        },
+                                        selected = uiState.navigationPlacement == placement,
+                                        enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                            uiState.navigation.status != FeatureStatus.RECOVERING,
+                                        onClick = { onNavigationPlacement(placement) },
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column {
+                                    Text("Авто", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text("По режиму приборки", color = Muted, fontSize = 11.sp)
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Switch(
+                                    checked = uiState.navigationAutomatic,
+                                    onCheckedChange = onNavigationAutomatic,
+                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                        uiState.navigation.status != FeatureStatus.RECOVERING,
+                                )
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onChooseNavigationApp,
+                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                        uiState.navigation.status != FeatureStatus.RECOVERING &&
+                                        uiState.navigation.status != FeatureStatus.ACTIVE,
+                                ) {
+                                    Text("Выбрать", fontWeight = FontWeight.SemiBold)
+                                }
+                                Button(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onNavigationAction,
+                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                        uiState.navigation.status != FeatureStatus.RECOVERING,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Accent,
+                                        contentColor = Color(0xFF06251C),
+                                    ),
+                                ) {
+                                    Text(uiState.navigationButtonLabel, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
                     FeatureCard(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Outlined.Apps,
-                        title = "Приложения на экранах",
-                        subtitle = selectedAppNames,
+                        title = "Трансляция",
+                        subtitle = "Выбрано: ${uiState.selectedAppCount}",
                         snapshot = uiState.simulcast,
                         switchValue = uiState.simulcast.desiredEnabled,
                         onSwitch = onToggleSimulcast,
+                        actionsFillRemaining = true,
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            OutlinedButton(
-                                modifier = Modifier.weight(1f),
-                                onClick = onChooseApps,
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            SelectedSimulcastApps(uiState.selectedApps)
+                            Spacer(Modifier.weight(1f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Text("Выбрать", fontWeight = FontWeight.SemiBold)
-                            }
-                            Button(
-                                modifier = Modifier.weight(1f),
-                                onClick = if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
-                                    uiState.simulcast.desiredEnabled
-                                ) onRepairSimulcast else onLaunchSimulcast,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (uiState.simulcast.desiredEnabled) {
-                                        Accent
-                                    } else {
-                                        DisabledElevated
-                                    },
-                                    contentColor = if (uiState.simulcast.desiredEnabled) {
-                                        Color(0xFF06251C)
-                                    } else {
-                                        DisabledInk
-                                    },
-                                ),
-                            ) {
-                                Text(
-                                    if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
+                                OutlinedButton(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = onChooseApps,
+                                ) {
+                                    Text("Выбрать", fontWeight = FontWeight.SemiBold)
+                                }
+                                Button(
+                                    modifier = Modifier.weight(1f),
+                                    onClick = if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
                                         uiState.simulcast.desiredEnabled
-                                    ) "Исправить" else "Запустить",
-                                    fontWeight = FontWeight.SemiBold,
-                                )
+                                    ) onRepairSimulcast else onLaunchSimulcast,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (uiState.simulcast.desiredEnabled) {
+                                            Accent
+                                        } else {
+                                            DisabledElevated
+                                        },
+                                        contentColor = if (uiState.simulcast.desiredEnabled) {
+                                            Color(0xFF06251C)
+                                        } else {
+                                            DisabledInk
+                                        },
+                                    ),
+                                ) {
+                                    Text(
+                                        if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
+                                            uiState.simulcast.desiredEnabled
+                                        ) "Исправить" else "Запустить",
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
                             }
                         }
                     }
@@ -259,105 +338,28 @@ fun DenzaAppsRoot(
                             }
                         }
                     }
-                    FeatureCard(
-                        modifier = Modifier.weight(1f),
-                        icon = Icons.Outlined.Map,
-                        title = "Навигация",
-                        subtitle = uiState.navigationAppLabel,
-                        snapshot = uiState.navigation,
-                    ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                ClusterMapPlacement.entries.forEach { placement ->
-                                    NavigationPlacementChoice(
-                                        modifier = Modifier.weight(1f),
-                                        text = when (placement) {
-                                            ClusterMapPlacement.FULL -> "Полный"
-                                            ClusterMapPlacement.LEFT -> "Слева"
-                                            ClusterMapPlacement.CENTER -> "Центр"
-                                            ClusterMapPlacement.RIGHT -> "Справа"
-                                        },
-                                        selected = uiState.navigationPlacement == placement,
-                                        enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                            uiState.navigation.status != FeatureStatus.RECOVERING,
-                                        onClick = { onNavigationPlacement(placement) },
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column {
-                                    Text("Авто", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                                    Text("По режиму приборки", color = Muted, fontSize = 11.sp)
-                                }
-                                Spacer(Modifier.weight(1f))
-                                Switch(
-                                    checked = uiState.navigationAutomatic,
-                                    onCheckedChange = onNavigationAutomatic,
-                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                        uiState.navigation.status != FeatureStatus.RECOVERING,
-                                )
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            ) {
-                                OutlinedButton(
-                                    modifier = Modifier.weight(1f),
-                                    onClick = onChooseNavigationApp,
-                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                        uiState.navigation.status != FeatureStatus.RECOVERING &&
-                                        uiState.navigation.status != FeatureStatus.ACTIVE,
-                                ) {
-                                    Text("Выбрать", fontWeight = FontWeight.SemiBold)
-                                }
-                                Button(
-                                    modifier = Modifier.weight(1f),
-                                    onClick = onNavigationAction,
-                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                        uiState.navigation.status != FeatureStatus.RECOVERING,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Accent,
-                                        contentColor = Color(0xFF06251C),
-                                    ),
-                                ) {
-                                    Text(uiState.navigationButtonLabel, fontWeight = FontWeight.SemiBold)
-                                }
-                            }
-                        }
                     }
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
-                    SplitScreenCard(
-                        modifier = Modifier.weight(1f),
-                        snapshot = uiState.splitScreen,
-                        onToggle = onToggleSplitScreen,
-                    )
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    ) {
+                        SplitScreenCard(
+                            modifier = Modifier.weight(1f),
+                            snapshot = uiState.splitScreen,
+                            onToggle = onToggleSplitScreen,
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Spacer(Modifier.weight(1f))
+                    }
                     Spacer(Modifier.weight(1f))
-                    Spacer(Modifier.weight(1f))
                 }
-                Spacer(Modifier.weight(1f))
-                Footer(
-                    state = uiState,
-                    onTechnicalTap = {
-                        titleTaps += 1
-                        if (titleTaps >= 7) {
-                            titleTaps = 0
-                            showTechnical = true
-                            showSupport = true
-                        }
-                    },
+                CompactHelpButton(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .padding(end = 40.dp, bottom = 8.dp),
+                    onSupport = { showSupport = true },
                 )
             }
         }
@@ -368,6 +370,13 @@ fun DenzaAppsRoot(
             state = uiState,
             showTechnical = showTechnical,
             onSelectClusterDisplay = onSelectClusterDisplay,
+            onTitleTap = {
+                titleTaps += 1
+                if (titleTaps >= 7) {
+                    titleTaps = 0
+                    showTechnical = true
+                }
+            },
             onDismiss = {
                 showSupport = false
                 showTechnical = false
@@ -421,7 +430,7 @@ private fun SplitScreenCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Outlined.Splitscreen,
+                    Icons.Outlined.VerticalSplit,
                     null,
                     tint = if (enabled) Accent else DisabledInk,
                 )
@@ -727,14 +736,14 @@ private fun DenzaTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun CompactToolbar(onSupport: () -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onSupport) {
-            Icon(Icons.Outlined.Info, null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Помощь")
-        }
+private fun CompactHelpButton(
+    modifier: Modifier,
+    onSupport: () -> Unit,
+) {
+    TextButton(modifier = modifier, onClick = onSupport) {
+        Icon(Icons.Outlined.Info, null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(7.dp))
+        Text("Помощь", fontSize = 13.sp)
     }
 }
 
@@ -744,59 +753,148 @@ private fun FeatureCard(
     icon: ImageVector,
     title: String,
     subtitle: String,
+    subtitleIcon: Drawable? = null,
+    subtitleIconKey: String? = null,
     snapshot: FeatureSnapshot,
     switchValue: Boolean? = null,
+    switchEnabled: Boolean = true,
     onSwitch: ((Boolean) -> Unit)? = null,
+    actionsFillRemaining: Boolean = false,
     actions: @Composable () -> Unit,
 ) {
     val featureEnabled = switchValue != false
     Card(
-        modifier = modifier.height(405.dp),
-        shape = RoundedCornerShape(24.dp),
+        modifier = modifier.height(314.dp),
+        shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (featureEnabled) SurfaceColor else DisabledSurface,
         ),
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(40.dp)
                         .background(
                             if (featureEnabled) Elevated else DisabledElevated,
-                            RoundedCornerShape(14.dp),
+                            RoundedCornerShape(12.dp),
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(icon, null, tint = if (featureEnabled) Accent else DisabledInk)
+                    Icon(
+                        icon,
+                        null,
+                        modifier = Modifier.size(22.dp),
+                        tint = if (featureEnabled) Accent else DisabledInk,
+                    )
                 }
-                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    title,
+                    color = if (featureEnabled) Ink else DisabledInk,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                )
                 if (switchValue != null && onSwitch != null) {
-                    Switch(checked = switchValue, onCheckedChange = onSwitch)
+                    Switch(
+                        checked = switchValue,
+                        onCheckedChange = onSwitch,
+                        enabled = switchEnabled,
+                    )
                 }
             }
-            Spacer(Modifier.height(24.dp))
-            Text(
-                title,
-                color = if (featureEnabled) Ink else DisabledInk,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                subtitle,
-                color = if (featureEnabled) Muted else DisabledMuted,
-                fontSize = 15.sp,
-            )
-            Spacer(Modifier.height(26.dp))
-            StatusLine(snapshot)
-            if (snapshot.message.isNotBlank()) {
-                Spacer(Modifier.height(8.dp))
-                Text(snapshot.message, color = Muted, fontSize = 14.sp)
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (subtitleIcon != null) {
+                    CompactAppIcon(
+                        icon = subtitleIcon,
+                        key = subtitleIconKey.orEmpty(),
+                        fallback = icon,
+                    )
+                    Spacer(Modifier.width(7.dp))
+                }
+                Text(
+                    subtitle,
+                    color = if (featureEnabled) Muted else DisabledMuted,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.width(10.dp))
+                StatusLine(snapshot)
             }
-            Spacer(Modifier.weight(1f))
-            Row(verticalAlignment = Alignment.CenterVertically, content = { actions() })
+            if (snapshot.message.isNotBlank()) {
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    snapshot.message,
+                    color = Muted,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (actionsFillRemaining) {
+                Spacer(Modifier.height(10.dp))
+                Box(modifier = Modifier.fillMaxWidth().weight(1f)) { actions() }
+            } else {
+                Spacer(Modifier.weight(1f))
+                Box(modifier = Modifier.fillMaxWidth()) { actions() }
+            }
         }
+    }
+}
+
+@Composable
+private fun SelectedSimulcastApps(apps: List<SimulcastAppChoice>) {
+    if (apps.isEmpty()) {
+        Text("Приложения не выбраны", color = Muted, fontSize = 12.sp)
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        apps.take(6).forEach { app ->
+            Row(
+                modifier = Modifier.height(18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CompactAppIcon(
+                    icon = app.icon,
+                    key = app.packageName,
+                    fallback = Icons.Outlined.Apps,
+                )
+                Spacer(Modifier.width(7.dp))
+                Text(
+                    app.label,
+                    color = Ink,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactAppIcon(
+    icon: Drawable?,
+    key: String,
+    fallback: ImageVector,
+) {
+    val bitmap = remember(key, icon) {
+        icon?.toBitmap(48, 48)?.asImageBitmap()
+    }
+    if (bitmap != null) {
+        Image(
+            painter = BitmapPainter(bitmap),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            contentScale = ContentScale.Fit,
+        )
+    } else {
+        Icon(fallback, null, modifier = Modifier.size(18.dp), tint = Muted)
     }
 }
 
@@ -811,14 +909,14 @@ private fun StatusLine(snapshot: FeatureSnapshot) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (snapshot.status == FeatureStatus.STARTING || snapshot.status == FeatureStatus.RECOVERING) {
             CircularProgressIndicator(
-                modifier = Modifier.size(14.dp),
+                modifier = Modifier.size(12.dp),
                 strokeWidth = 2.dp,
                 color = color,
             )
         } else {
-            Box(Modifier.size(10.dp).background(color, CircleShape))
+            Box(Modifier.size(8.dp).background(color, CircleShape))
         }
-        Spacer(Modifier.width(9.dp))
+        Spacer(Modifier.width(6.dp))
         Text(
             when (snapshot.status) {
                 FeatureStatus.OFF -> "Выключено"
@@ -832,20 +930,10 @@ private fun StatusLine(snapshot: FeatureSnapshot) {
             },
             color = color,
             fontWeight = FontWeight.Medium,
-            fontSize = 15.sp,
+            fontSize = 12.sp,
+            maxLines = 1,
         )
     }
-}
-
-@Composable
-private fun Footer(state: DenzaUiState, onTechnicalTap: () -> Unit) {
-    val ready = listOf(state.simulcast, state.mirrors, state.navigation).count { it.isWorking }
-    Text(
-        if (ready == 0) "Функции включаются независимо" else "$ready из 3 функций готовы",
-        color = Muted,
-        fontSize = 13.sp,
-        modifier = Modifier.clickable(onClick = onTechnicalTap),
-    )
 }
 
 @Composable
@@ -853,6 +941,7 @@ private fun SupportDialog(
     state: DenzaUiState,
     showTechnical: Boolean,
     onSelectClusterDisplay: (Int?) -> Unit,
+    onTitleTap: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(
@@ -865,7 +954,10 @@ private fun SupportDialog(
             shape = RoundedCornerShape(26.dp),
         ) {
             Column(modifier = Modifier.padding(28.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.clickable(enabled = !showTechnical, onClick = onTitleTap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Icon(
                         if (showTechnical) Icons.Outlined.Build else Icons.Outlined.Info,
                         null,
@@ -887,7 +979,7 @@ private fun SupportDialog(
                     )
                     Spacer(Modifier.height(18.dp))
                     HelpSection(
-                        title = "Приложения на экранах",
+                        title = "Трансляция",
                         text = "Нажмите «Выбрать», отметьте до шести приложений и затем «Запустить». Откроется штатное меню выбора экрана.",
                     )
                     HelpSection(
