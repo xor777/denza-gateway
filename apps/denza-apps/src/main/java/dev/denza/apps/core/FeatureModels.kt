@@ -6,6 +6,7 @@ enum class FeatureId {
     MIRRORS,
     NAVIGATION,
     SPLIT_SCREEN,
+    HUD_GUIDANCE,
 }
 
 /**

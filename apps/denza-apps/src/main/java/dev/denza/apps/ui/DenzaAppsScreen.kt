@@ -108,6 +108,7 @@ fun DenzaAppsRoot(
     onCloseNavigationPicker: () -> Unit,
     onSelectNavigationApp: (String) -> Unit,
     onToggleSplitScreen: (Boolean) -> Unit,
+    onToggleHudGuidance: (Boolean) -> Unit,
     onSelectClusterDisplay: (Int?) -> Unit,
     onChooseApps: () -> Unit,
     onCloseAppPicker: () -> Unit,
@@ -349,7 +350,14 @@ fun DenzaAppsRoot(
                             snapshot = uiState.splitScreen,
                             onToggle = onToggleSplitScreen,
                         )
-                        Spacer(Modifier.weight(1f))
+                        CompactToggleCard(
+                            modifier = Modifier.weight(1f),
+                            icon = Icons.Outlined.Map,
+                            title = "HUD-подсказки",
+                            subtitle = "Указания на проекции",
+                            snapshot = uiState.hudGuidance,
+                            onToggle = onToggleHudGuidance,
+                        )
                         Spacer(Modifier.weight(1f))
                     }
                     Spacer(Modifier.weight(1f))
@@ -407,8 +415,27 @@ private fun SplitScreenCard(
     snapshot: FeatureSnapshot,
     onToggle: (Boolean) -> Unit,
 ) {
-    val enabled = snapshot.desiredEnabled
     val subtitle = if (snapshot.status == FeatureStatus.ERROR) "Ошибка запуска" else "Управление окнами"
+    CompactToggleCard(
+        modifier = modifier,
+        icon = Icons.Outlined.VerticalSplit,
+        title = "Split screen",
+        subtitle = subtitle,
+        snapshot = snapshot,
+        onToggle = onToggle,
+    )
+}
+
+@Composable
+private fun CompactToggleCard(
+    modifier: Modifier,
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    snapshot: FeatureSnapshot,
+    onToggle: (Boolean) -> Unit,
+) {
+    val enabled = snapshot.desiredEnabled
     Card(
         modifier = modifier.height(96.dp),
         shape = RoundedCornerShape(22.dp),
@@ -430,7 +457,7 @@ private fun SplitScreenCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    Icons.Outlined.VerticalSplit,
+                    icon,
                     null,
                     tint = if (enabled) Accent else DisabledInk,
                 )
@@ -438,7 +465,7 @@ private fun SplitScreenCard(
             Spacer(Modifier.width(16.dp))
             Column {
                 Text(
-                    "Split screen",
+                    title,
                     color = if (enabled) Ink else DisabledInk,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,

@@ -28,6 +28,7 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.view.accessibility.AccessibilityWindowInfo;
 
 import dev.denza.disharebridge.DiShareScreens;
+import dev.denza.apps.feature.hud.HudGuidanceAccessibilityMonitor;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -80,6 +81,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     private static final int ICON_FALLBACK_BG = Color.rgb(0x26, 0x32, 0x40);
 
     private static volatile boolean connected;
+    private static volatile SimulcastAccessibilityService instance;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Target> targetCache = new HashMap<>();
@@ -105,6 +107,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     private int screenGeneration;
     private int appliedScreenGeneration = -1;
     private long missingDialogSinceMs;
+    private HudGuidanceAccessibilityMonitor hudGuidanceMonitor;
 
     // Gesture state shared between input windows and the painter.
     private boolean dragging;
@@ -120,8 +123,12 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         connected = true;
+        instance = this;
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
+        hudGuidanceMonitor = new HudGuidanceAccessibilityMonitor(this);
+        hudGuidanceMonitor.attach();
         Log.i(TAG, "service connected");
+        DenzaAppRepository.INSTANCE.refresh();
         scheduleRefresh();
     }
 
@@ -129,6 +136,10 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     public void onAccessibilityEvent(AccessibilityEvent event) {
         if (event == null) {
             return;
+        }
+        HudGuidanceAccessibilityMonitor hudMonitor = hudGuidanceMonitor;
+        if (hudMonitor != null) {
+            hudMonitor.onAccessibilityEvent(event);
         }
         int type = event.getEventType();
         if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
@@ -146,21 +157,50 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     @Override
     public boolean onUnbind(Intent intent) {
         connected = false;
+        if (instance == this) {
+            instance = null;
+        }
         handler.removeCallbacks(refreshRunnable);
+        tearDownHudGuidance();
         tearDown();
+        DenzaAppRepository.INSTANCE.refresh();
         return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
         connected = false;
+        if (instance == this) {
+            instance = null;
+        }
         handler.removeCallbacks(refreshRunnable);
+        tearDownHudGuidance();
         tearDown();
+        DenzaAppRepository.INSTANCE.refresh();
         super.onDestroy();
     }
 
     static boolean isConnected() {
         return connected;
+    }
+
+    static void requestHudGuidanceRefresh() {
+        SimulcastAccessibilityService service = instance;
+        if (service == null) {
+            return;
+        }
+        HudGuidanceAccessibilityMonitor monitor = service.hudGuidanceMonitor;
+        if (monitor != null) {
+            monitor.onSettingChanged();
+        }
+    }
+
+    private void tearDownHudGuidance() {
+        HudGuidanceAccessibilityMonitor monitor = hudGuidanceMonitor;
+        hudGuidanceMonitor = null;
+        if (monitor != null) {
+            monitor.detach();
+        }
     }
 
     private void scheduleRefresh() {

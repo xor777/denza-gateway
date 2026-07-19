@@ -102,6 +102,59 @@ scene remains visible. A failed command or missing task releases the map
 surface and enters recovery; releasing the virtual display is the final
 fallback that lets Android return its task to the default display.
 
+## HUD turn-by-turn guidance
+
+The compact **HUD hints / Guidance on projection** switch is independent of
+the full Yandex instrument projection. When enabled, the existing Denza Apps
+accessibility service reads only visible, named Yandex Navigator guidance
+nodes. The primary layout exposes the maneuver description and distance,
+remaining route distance, remaining route time, and arrival time. Alternate
+named maneuver nodes cover the second Yandex layout. `text_nextstreet` and
+`text_jointballoon_nextstreet` are used when Yandex makes a next-road label
+visible; otherwise field 10 stays empty instead of repeating the maneuver text.
+
+The stock HUD road endpoint is
+`com.ts.car.someip.service/.manager.SomeIpServerService`, service ID
+`3097367205183488`, topic `1127042368241665`. Its protobuf-like
+`HudRoadInfoNotifyStruct` accepts total distance (`car2Dest`, field 3), total
+remaining time (`timeOfCar2Dest`, field 4), maneuver PNG (field 8), distance to
+the intersection (field 9), next road (field 10), navigation state (field 16),
+ETA text (field 26), remaining-time text (field 27), and maneuver ID (field
+28). The same contract has later candidates for lane recommendations, speed
+limits, cameras, route progress, and destination text; those are research
+inputs until their stock rendering and Yandex source are independently live
+verified.
+
+Yandex Navigator 29.8.1 also contains a structured AndroidX Car App path. Its
+own projected guidance constructs a `Trip` from destination address, a
+`TravelEstimate` from remaining distance, arrival time, and remaining time,
+and a `Step` from next-road/direction-sign text, maneuver metadata, roundabout
+exit number, and lanes. That path is guarded by Yandex's Android Auto host
+certificate allowlist and is not called or bypassed by Denza Apps. The product
+bridge uses visible accessibility semantics, not OCR or private-code
+injection.
+
+On 2026-07-19 the live Yandex route exposed `56 km`, ETA `19:34`, `53 min`, a
+right turn in `20 m`, current speed `0`, and speed limit `20`. Denza Apps bound
+the stock SOME/IP service, started the HUD navigation service, and published
+the live right-turn update without a crash. The user confirmed that this HUD
+firmware renders the arrow, distance to maneuver, scrolling field-10 text,
+remaining time, and ETA. It did not render numeric `car2Dest` as total-distance
+text. Denza Apps therefore puts formatted remaining route distance in the
+confirmed field-26 summary slot instead of the redundant arrival clock, while
+field 27 keeps remaining travel time. Field 10 is reserved for a real next-road
+name and stays empty when Yandex does not expose one; `car2Dest` is still sent
+in meters exactly as in the stock navigation implementation. The firmware adds
+a Chinese label beside the summary independently of the strings supplied by
+Denza Apps. The final build was then visually accepted with `51 km` in the
+former ETA slot and `47 min` alongside it.
+
+Updates are deduplicated with a five-second heartbeat. If no valid visible
+route is found for 1.8 seconds, Denza Apps clears the road guidance. Disabling
+the switch clears, stops, and unbinds the stock service. Unknown maneuver text
+is never guessed as a straight arrow: text and distance may continue, but the
+directional image is omitted.
+
 ## Central IVI split routing
 
 The central screen's split mode is the stock BYD `byd-freeform` scene, not a
@@ -132,6 +185,15 @@ Turning the switch off moves routed non-shell tasks back to the fullscreen root
 that contains Denza Apps and restores the stock launcher/map anchors. No app is
 started by toggling the switch, and the card intentionally does not expose the
 routing details in its text.
+
+Navigation and Simulcast own their task transitions independently of this
+router. Starting, projecting, returning, or stopping either feature cancels the
+short-lived picker session before issuing task commands. On 2026-07-19 this was
+live-verified with Split screen still enabled: 2GIS opened fullscreen, moved to
+the app-owned navigation display, and returned through a new fullscreen task
+without entering either stock split pane. 2GIS intentionally exits its process
+during display changes, so navigation revalidates the task and reopens it on the
+central display when Android removes the old task.
 
 ## OpenBYD research boundary
 

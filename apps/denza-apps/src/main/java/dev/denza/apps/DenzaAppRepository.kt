@@ -14,6 +14,8 @@ import dev.denza.apps.feature.cluster.ClusterDisplayDescriptor
 import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterMapPlacement
 import dev.denza.apps.feature.cluster.ClusterSceneService
+import dev.denza.apps.feature.hud.HudGuidanceRuntime
+import dev.denza.apps.feature.hud.HudGuidanceSettings
 import dev.denza.apps.feature.mirrors.MirrorsPosition
 import dev.denza.apps.feature.mirrors.MirrorsSettings
 import dev.denza.apps.feature.mirrors.SideCameraMonitorService
@@ -53,6 +55,7 @@ data class DenzaUiState(
         status = FeatureStatus.READY,
     ),
     val splitScreen: FeatureSnapshot = FeatureReducer.disabled(FeatureId.SPLIT_SCREEN),
+    val hudGuidance: FeatureSnapshot = FeatureReducer.disabled(FeatureId.HUD_GUIDANCE),
     val navigationButtonLabel: String = "Открыть",
     val navigationAutomatic: Boolean = false,
     val navigationPlacement: ClusterMapPlacement = ClusterMapPlacement.FULL,
@@ -132,6 +135,7 @@ object DenzaAppRepository {
                 splitSession.message,
                 splitSession.details,
             ),
+            hudGuidance = evaluateHudGuidance(context),
             technicalDetails = diagnostics(context),
             clusterCandidates = ClusterDisplayResolver.candidates(context),
         )
@@ -284,6 +288,49 @@ object DenzaAppRepository {
 
     fun setSplitScreenEnabled(enabled: Boolean) {
         SplitScreenCoordinator.setEnabled(enabled)
+    }
+
+    fun setHudGuidanceEnabled(enabled: Boolean) {
+        val context = appContext ?: return
+        HudGuidanceSettings.setEnabled(context, enabled)
+        SimulcastAccessibilityService.requestHudGuidanceRefresh()
+        if (!enabled) {
+            refresh()
+            return
+        }
+        mutableState.value = mutableState.value.copy(
+            hudGuidance = FeatureReducer.starting(FeatureId.HUD_GUIDANCE),
+        )
+        if (!isInstalled(context.packageManager, NavigationAppPolicy.DEFAULT_PACKAGE)) {
+            refresh()
+            return
+        }
+        if (isAccessibilityEnabled(context) && SimulcastAccessibilityService.isConnected()) {
+            SimulcastAccessibilityService.requestHudGuidanceRefresh()
+            refresh()
+            return
+        }
+        executor.execute {
+            val failure = try {
+                repairSimulcastAccess(context)
+                null
+            } catch (error: Exception) {
+                error
+            }
+            if (failure == null) {
+                SimulcastAccessibilityService.requestHudGuidanceRefresh()
+                refresh()
+            } else {
+                mutableState.value = mutableState.value.copy(
+                    hudGuidance = FeatureReducer.needsAction(
+                        FeatureReducer.starting(FeatureId.HUD_GUIDANCE),
+                        friendlySetupError(failure),
+                        failure.toString(),
+                    ),
+                    technicalDetails = diagnostics(context),
+                )
+            }
+        }
     }
 
     fun selectClusterDisplay(displayId: Int?) {
@@ -439,6 +486,36 @@ object DenzaAppRepository {
         }
     }
 
+    private fun evaluateHudGuidance(context: Context): FeatureSnapshot {
+        if (!HudGuidanceSettings.isEnabled(context)) {
+            return FeatureReducer.disabled(FeatureId.HUD_GUIDANCE)
+        }
+        if (!isInstalled(context.packageManager, NavigationAppPolicy.DEFAULT_PACKAGE)) {
+            return FeatureSnapshot(
+                id = FeatureId.HUD_GUIDANCE,
+                desiredEnabled = true,
+                status = FeatureStatus.UNAVAILABLE,
+                message = "Яндекс Навигатор не найден",
+            )
+        }
+        if (!isAccessibilityEnabled(context)) {
+            return FeatureReducer.needsAction(
+                FeatureReducer.starting(FeatureId.HUD_GUIDANCE),
+                "Нужно разрешить доступ",
+            )
+        }
+        if (!SimulcastAccessibilityService.isConnected()) {
+            return FeatureReducer.recovering(
+                FeatureReducer.starting(FeatureId.HUD_GUIDANCE),
+                "Подключаю подсказки",
+            )
+        }
+        return FeatureReducer.ready(
+            FeatureId.HUD_GUIDANCE,
+            active = HudGuidanceRuntime.isActive(),
+        ).copy(details = HudGuidanceRuntime.details())
+    }
+
     private fun navigationSnapshot(
         phase: NavigationPhase,
         message: String,
@@ -575,7 +652,9 @@ object DenzaAppRepository {
         val navigation = NavigationCoordinator.snapshot()
         appendLine("Навигация=${navigation.message.ifBlank { navigation.phase.name.lowercase() }}")
         val split = SplitScreenCoordinator.snapshot()
-        append("Split screen=${split.message.ifBlank { split.phase.name.lowercase() }}")
+        appendLine("Split screen=${split.message.ifBlank { split.phase.name.lowercase() }}")
+        appendLine("HUD-подсказки=${enabledLabel(HudGuidanceSettings.isEnabled(context))}")
+        append("Данные HUD=${HudGuidanceRuntime.details()}")
     }
 
     private fun yesNo(value: Boolean) = if (value) "Доступен" else "Недоступен"
