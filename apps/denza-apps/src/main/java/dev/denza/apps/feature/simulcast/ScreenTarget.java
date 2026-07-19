@@ -14,7 +14,10 @@ public final class ScreenTarget {
             new ScreenTarget("screen_fse", "fse_screen"),
             new ScreenTarget("screen_rse_l", "left_rse_screen"),
             new ScreenTarget("screen_rse_r", "right_rse_screen"),
-            new ScreenTarget("screen_overhead", "overhead_screen")
+            new ScreenTarget("screen_overhead", "overhead_screen"),
+            // Some single-rear-screen configurations expose the built-in rear
+            // display as the DiShare TV receiver while keeping the same rear card.
+            new ScreenTarget("screen_tv", "overhead_screen")
     ));
 
     public final String receiverId;

@@ -34,5 +34,16 @@ class ScreenTargetTest {
         assertTrue(receiverIds.contains("screen_rse_l"))
         assertTrue(receiverIds.contains("screen_rse_r"))
         assertTrue(receiverIds.contains("screen_overhead"))
+        assertTrue(receiverIds.contains("screen_tv"))
+    }
+
+    @Test
+    fun mapsSingleRearTvReceiverToOverheadCard() {
+        val targets = ScreenTarget.availableTargets(
+            setOf("overhead_screen"),
+            setOf("screen_tv"),
+        )
+
+        assertEquals(setOf("screen_tv"), ScreenTarget.receiverIds(targets))
     }
 }

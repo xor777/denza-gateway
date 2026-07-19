@@ -382,14 +382,20 @@ The product mapping is now explicit and dynamic:
 | `screen_rse_l` | `left_rse_screen` |
 | `screen_rse_r` | `right_rse_screen` |
 | `screen_overhead` | `overhead_screen` |
+| `screen_tv` | `overhead_screen` (single rear-screen candidate) |
 
 `screen_ivi` is always the source and is never accepted as a drop target. A
 temporary `getScreens` failure leaves the desired Simulcast setting intact,
 shows a neutral screen check, retries, and accepts no unconfirmed receiver.
-HUD/FSE remain the only live-verified receivers. N9 rear and overhead support is
-implemented from the contract but must not be called verified until captures of
-`getScreens`, the accessibility tree, and one isolated launch per receiver are
-recorded.
+HUD/FSE remain the only live-verified receivers. The DiShare implementation also
+exposes a distinct `screen_tv` / `deviceId=tv` contract for configurations with a
+single rear display; Denza Apps maps it to the same visible rear card as
+`screen_overhead`. N9 rear and overhead support is implemented from these
+contracts but must not be called verified until captures of `getScreens`, the
+accessibility tree, and one isolated launch per receiver are recorded. The
+locally inspected OpenBYD APK enumerates Android `Display` objects, not DiShare
+receivers, so its ability to see a rear display is supporting hardware evidence
+but cannot replace the `getScreens` availability check.
 
 ## HUD camera streaming findings
 
