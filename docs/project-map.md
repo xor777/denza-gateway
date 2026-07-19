@@ -179,7 +179,8 @@ After the migration has been verified on a real head unit:
 
 1. verify left/right, Sides/Center, processing, preview, and map-plus-camera in
    Denza Apps on a real head unit;
-2. stop immediately if `com.byd.avc` crashes and keep fast left-to-right marked
+2. capture and report any `com.byd.avc` crash as an escalation alert, avoid
+   repeating its suspected trigger, and keep fast left-to-right marked
    unresolved until explicitly proven;
 3. remove Denza Mirrors from the default Gradle build;
 4. move its frozen source under `legacy/denza-mirrors` in a separate commit.

@@ -81,8 +81,10 @@ package into product code):
 
 ## Live Car Debugging Rules
 
-- Treat `com.byd.avc` crashes as a hard stop. Capture `logcat -b crash -v time`,
-  document the trigger, then revert or isolate the change.
+- Treat `com.byd.avc` crashes as escalation alerts, not automatic hard stops.
+  Capture `logcat -b crash -v time`, document the trigger, and notify the user
+  briefly. Continue safe in-scope work, but do not repeat the suspected trigger
+  until the change is reverted or isolated.
 - Keep the last known working APK behavior easy to restore before trying a risky
   experiment.
 - Prefer host-side scripts in `tools/` for speculative probes before adding code

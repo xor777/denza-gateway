@@ -69,4 +69,6 @@ export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
   new `.md` only when the topic has a durable owner. Parked code → `research/`.
 - Never commit APKs, reverse-engineered APKs, or large extracted binaries
   (`reverse/`, `captures/`, build outputs are git-ignored).
-- Treat `com.byd.avc` crashes as a hard stop; capture `logcat -b crash -v time`.
+- Treat `com.byd.avc` crashes as escalation alerts, not automatic hard stops.
+  Capture `logcat -b crash -v time`, notify the user briefly, and continue safe
+  in-scope work without repeating the suspected trigger until it is isolated.

@@ -140,7 +140,7 @@ code was copied into Denza Apps.
 Denza Mirrors remains the stronger reference for camera geometry and central
 placement. OpenBYD is not treated as ground truth.
 
-## Verification status and hard stops
+## Verification status and escalation alerts
 
 Local unit tests and `:denza-apps:assembleDebug` pass. APK
 `dbdabeb12811b05889ea8caff52ce19d13892be46033a50fc6b25537b96cb62e`
@@ -201,7 +201,9 @@ Hardware-dependent behavior still awaiting acceptance:
   Denza Apps owns the AVC display surface. The persistent-Surface candidate did
   not fix it; pause-based operation remains a known compatibility limitation.
 
-Any crash in `com.byd.avc` is a hard stop. Stop the monitor and collect:
+Any crash in `com.byd.avc` is an escalation alert, not an automatic hard stop.
+Notify the user briefly, continue safe in-scope work, and avoid repeating the
+suspected trigger until it is isolated. Collect:
 
 ```bash
 adb logcat -b crash -d -v time
