@@ -93,13 +93,18 @@ class YandexGuidanceParserTest {
     }
 
     @Test
-    fun schematicRoundaboutShowsPassedExitsWithoutAssumingTheirAngles() {
+    fun schematicRoundaboutShowsPassedExitsAndMovesTheTargetArrow() {
         assertEquals(0, HudSomeIpClient.schematicPassedExitCount(null))
         assertEquals(0, HudSomeIpClient.schematicPassedExitCount(1))
         assertEquals(1, HudSomeIpClient.schematicPassedExitCount(2))
         assertEquals(2, HudSomeIpClient.schematicPassedExitCount(3))
         assertEquals(6, HudSomeIpClient.schematicPassedExitCount(7))
         assertEquals(11, HudSomeIpClient.schematicPassedExitCount(20))
+        assertEquals(0f, HudSomeIpClient.schematicRoundaboutExitAngle(1, 1))
+        assertEquals(-90f, HudSomeIpClient.schematicRoundaboutExitAngle(2, 2))
+        assertEquals(-180f, HudSomeIpClient.schematicRoundaboutExitAngle(3, 3))
+        assertEquals(-225f, HudSomeIpClient.schematicRoundaboutExitAngle(4, 4))
+        assertEquals(-245f, HudSomeIpClient.schematicRoundaboutExitAngle(7, 7))
     }
 
     @Test

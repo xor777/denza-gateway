@@ -151,8 +151,12 @@ Yandex UI also has a named `exit_number_text` accessibility view, and its own
 debug fixtures cover at least exits 1, 5, and 7. Denza Apps now reads that view
 with Russian/English instruction parsing as a fallback and draws a schematic
 roundabout: passed exits are thin branches and the target remains the prominent
-arrow. Local tests, APK build, and on-device PNG rendering passed for exits 1,
-2, 3, and 7; live road verification on a real roundabout is still pending.
+arrow. The target moves to the conventional right/straight/left position for
+the first three exits; larger exit counts are distributed around the circle.
+This is an ordinal aid rather than claimed road geometry because Yandex does
+not provide an exit angle in this path. Local tests and the APK build pass for
+exits 1, 2, 3, 4, and 7. On-device visual confirmation of the dynamic artwork
+and live-road verification on a real roundabout are still pending.
 
 On 2026-07-19 the live Yandex route exposed `56 km`, ETA `19:34`, `53 min`, a
 right turn in `20 m`, current speed `0`, and speed limit `20`. Denza Apps bound

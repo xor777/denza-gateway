@@ -302,11 +302,10 @@ final class HudSomeIpClient {
             canvas.drawPath(path, paint);
             drawArrow(canvas, paint, 58f, 126f, 90f);
         } else if (maneuver == HudManeuver.ROUNDABOUT_LEFT || maneuver == HudManeuver.ROUNDABOUT_RIGHT) {
-            canvas.drawArc(48f, 42f, 144f, 138f, 70f, 285f, false, paint);
+            canvas.drawCircle(96f, 90f, 48f, paint);
             canvas.drawLine(96f, 164f, 96f, 138f, paint);
             drawPassedRoundaboutExits(canvas, paint, roundaboutExitNumber);
-            canvas.drawLine(132f, 58f, 158f, 36f, paint);
-            drawArrow(canvas, paint, 164f, 30f, -38f);
+            drawRoundaboutTargetExit(canvas, paint, roundaboutExitNumber);
         } else if (maneuver == HudManeuver.SLIGHT_LEFT || maneuver == HudManeuver.SLIGHT_RIGHT) {
             Path path = new Path();
             path.moveTo(64f, 164f);
@@ -343,14 +342,11 @@ final class HudSomeIpClient {
         branchPaint.setStrokeWidth(exitNumber != null && exitNumber > 8 ? 7f : 9f);
         final float centerX = 96f;
         final float centerY = 90f;
-        final float innerRadius = 54f;
+        final float innerRadius = 52f;
         final float outerRadius = 72f;
-        final float entryAngle = 90f;
-        final float targetAngle = 318f;
         int schematicExitNumber = passedExits + 1;
         for (int index = 1; index <= passedExits; index++) {
-            float angle = entryAngle
-                    + (targetAngle - entryAngle) * index / schematicExitNumber;
+            float angle = schematicRoundaboutExitAngle(schematicExitNumber, index);
             double radians = Math.toRadians(angle);
             float cosine = (float) Math.cos(radians);
             float sine = (float) Math.sin(radians);
@@ -363,11 +359,60 @@ final class HudSomeIpClient {
         }
     }
 
+    private static void drawRoundaboutTargetExit(
+            Canvas canvas,
+            Paint maneuverPaint,
+            Integer exitNumber) {
+        int schematicExitNumber = exitNumber == null || exitNumber < 1
+                ? 0
+                : Math.min(exitNumber, MAX_SCHEMATIC_ROUNDABOUT_EXIT);
+        float angle = schematicExitNumber == 0
+                ? -42f
+                : schematicRoundaboutExitAngle(schematicExitNumber, schematicExitNumber);
+        double radians = Math.toRadians(angle);
+        float cosine = (float) Math.cos(radians);
+        float sine = (float) Math.sin(radians);
+        final float centerX = 96f;
+        final float centerY = 90f;
+        final float innerRadius = 48f;
+        final float shaftRadius = 81f;
+        final float tipRadius = 89f;
+        Paint targetExitPaint = new Paint(maneuverPaint);
+        targetExitPaint.setStrokeWidth(15f);
+        canvas.drawLine(
+                centerX + innerRadius * cosine,
+                centerY + innerRadius * sine,
+                centerX + shaftRadius * cosine,
+                centerY + shaftRadius * sine,
+                targetExitPaint);
+        drawArrow(
+                canvas,
+                targetExitPaint,
+                centerX + tipRadius * cosine,
+                centerY + tipRadius * sine,
+                angle,
+                22f,
+                19f);
+    }
+
     static int schematicPassedExitCount(Integer exitNumber) {
         if (exitNumber == null || exitNumber <= 1) {
             return 0;
         }
         return Math.min(exitNumber, MAX_SCHEMATIC_ROUNDABOUT_EXIT) - 1;
+    }
+
+    static float schematicRoundaboutExitAngle(int exitNumber, int exitIndex) {
+        if (exitNumber <= 0 || exitIndex <= 0 || exitIndex > exitNumber) {
+            return -42f;
+        }
+        if (exitNumber <= 4) {
+            final float[] conventionalAngles = {0f, -90f, -180f, -225f};
+            return conventionalAngles[exitIndex - 1];
+        }
+        int boundedExitNumber = Math.min(exitNumber, MAX_SCHEMATIC_ROUNDABOUT_EXIT);
+        int boundedExitIndex = Math.min(exitIndex, boundedExitNumber);
+        return -245f * (boundedExitIndex - 1) / (boundedExitNumber - 1);
     }
 
     static boolean shouldMirrorIcon(HudManeuver maneuver) {
@@ -379,12 +424,23 @@ final class HudSomeIpClient {
     }
 
     private static void drawArrow(Canvas canvas, Paint paint, float x, float y, float angleDegrees) {
+        drawArrow(canvas, paint, x, y, angleDegrees, 28f, 26f);
+    }
+
+    private static void drawArrow(
+            Canvas canvas,
+            Paint paint,
+            float x,
+            float y,
+            float angleDegrees,
+            float length,
+            float halfWidth) {
         canvas.save();
         canvas.rotate(angleDegrees, x, y);
         Path arrow = new Path();
-        arrow.moveTo(x - 28f, y - 26f);
+        arrow.moveTo(x - length, y - halfWidth);
         arrow.lineTo(x, y);
-        arrow.lineTo(x - 28f, y + 26f);
+        arrow.lineTo(x - length, y + halfWidth);
         canvas.drawPath(arrow, paint);
         canvas.restore();
     }
