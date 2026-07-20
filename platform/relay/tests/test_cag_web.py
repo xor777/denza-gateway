@@ -16,6 +16,7 @@ from relay.cag_web import (
     WebError,
     create_server,
     decode_admin_result,
+    local_access_policy,
     parse_listener_ports,
 )
 
@@ -409,6 +410,14 @@ class CagWebAppTest(unittest.TestCase):
 
 
 class ServerTest(unittest.TestCase):
+    def test_local_access_policy_tracks_configured_port(self):
+        hosts, origins = local_access_policy(8899)
+        self.assertEqual({"127.0.0.1:8899", "localhost:8899"}, hosts)
+        self.assertEqual(
+            {"http://127.0.0.1:8899", "http://localhost:8899"},
+            origins,
+        )
+
     def test_server_refuses_non_loopback_bind(self):
         app = CagWebApp(DashboardService(FakeAdmin(), FakeProbe(set())))
         with self.assertRaisesRegex(ValueError, "loopback"):

@@ -25,9 +25,18 @@ MAX_ADMIN_OUTPUT = 65_536
 MAX_REQUEST_BODY = 4_096
 DEVICE_ID_PATTERN = re.compile(r"^[a-f0-9]{16}$")
 INVITE_TTLS = {900, 3_600, 86_400}
-DEFAULT_HOSTS = {"127.0.0.1:8787", "localhost:8787"}
-DEFAULT_ORIGINS = {"http://127.0.0.1:8787", "http://localhost:8787"}
 LOGGER = logging.getLogger("cag-web")
+
+
+def local_access_policy(port: int) -> tuple[set[str], set[str]]:
+    if type(port) is not int or not 1 <= port <= 65_535:
+        raise ValueError("invalid web port")
+    hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
+    origins = {f"http://{host}" for host in hosts}
+    return hosts, origins
+
+
+DEFAULT_HOSTS, DEFAULT_ORIGINS = local_access_policy(8787)
 
 
 class AdminCommandError(RuntimeError):
@@ -652,7 +661,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    app = CagWebApp(DashboardService(AdminClient(), ListenerProbe()))
+    hosts, origins = local_access_policy(args.port)
+    app = CagWebApp(
+        DashboardService(AdminClient(), ListenerProbe()),
+        hosts=hosts,
+        origins=origins,
+    )
     server = create_server(app, args.listen, args.port)
     LOGGER.info("action=start result=ok listen=%s port=%s", args.listen, args.port)
     try:

@@ -367,6 +367,23 @@
         that:
           - relay_verify_web_health.json.ok | bool
 
+    - name: Exercise relay admin dashboard through the systemd sandbox
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ relay_host_web_port }}/api/dashboard"
+        headers:
+          Host: "127.0.0.1:{{ relay_host_web_port }}"
+        return_content: true
+        status_code: 200
+      register: relay_verify_web_dashboard
+      no_log: true
+
+    - name: Require healthy schema and device collection through the web path
+      ansible.builtin.assert:
+        that:
+          - relay_verify_web_dashboard.json.doctor.ok | bool
+          - relay_verify_web_dashboard.json.devices is iterable
+      no_log: true
+
     - name: Read relay garbage-collection timer state  # noqa command-instead-of-module
       ansible.builtin.command: "systemctl {{ item }} cag-gc.timer"
       loop:
