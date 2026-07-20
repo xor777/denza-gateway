@@ -40,7 +40,7 @@ MAX_RELAY_PORT = 65_535
 DEFAULT_PAIR_TTL = 600
 DEFAULT_INVITE_TTL = 3_600
 DEVICE_LEASE_SECONDS = 14 * 24 * 60 * 60
-STATE_VERSION = 2
+STATE_VERSION = 3
 
 
 class StateError(RuntimeError):
@@ -69,6 +69,13 @@ def generate_code() -> str:
 def sanitize_label(value: str, fallback: str) -> str:
     cleaned = " ".join(value.replace("\x00", "").split()).strip()
     return (cleaned or fallback)[:80]
+
+
+def normalize_requested_label(value: str) -> str:
+    label = sanitize_label(value, "")
+    if not label:
+        raise StateError("label must not be empty")
+    return label
 
 
 def normalize_endpoint_host(value: str | None, endpoint_mode: str) -> str | None:
@@ -187,7 +194,7 @@ class RelayState:
             state = json.loads(self.state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             raise StateError("relay state is corrupt") from exc
-        if not isinstance(state, dict) or state.get("version") not in {1, STATE_VERSION}:
+        if not isinstance(state, dict) or state.get("version") not in {1, 2, STATE_VERSION}:
             raise StateError("unsupported relay state version")
         state = self._migrate(state)
         self._validate_state(state)
@@ -197,12 +204,15 @@ class RelayState:
         if state.get("version") == STATE_VERSION:
             return state
         migrated = copy.deepcopy(state)
+        if migrated.get("version") == 1:
+            migrated.pop("auth_limits", None)
+            grace_expires_at = self.clock() + DEVICE_LEASE_SECONDS
+            for device in migrated.get("devices", {}).values():
+                device.setdefault("control_public_key", device.get("tunnel_public_key"))
+                device.setdefault("lease_expires_at", grace_expires_at)
+        for record in migrated.get("codes", {}).values():
+            record.setdefault("requested_label", None)
         migrated["version"] = STATE_VERSION
-        migrated.pop("auth_limits", None)
-        grace_expires_at = self.clock() + DEVICE_LEASE_SECONDS
-        for device in migrated.get("devices", {}).values():
-            device.setdefault("control_public_key", device.get("tunnel_public_key"))
-            device.setdefault("lease_expires_at", grace_expires_at)
         return migrated
 
     def _validate_state(self, state: dict[str, Any]) -> None:
@@ -347,6 +357,7 @@ class RelayState:
                     "request_id",
                     "consumed_by",
                     "recoverable_code",
+                    "requested_label",
                 }
                 or record.get("kind") not in {"enroll", "pair"}
                 or not re.fullmatch(r"[a-f0-9]{32}", str(record.get("salt", "")))
@@ -360,6 +371,14 @@ class RelayState:
                     or record.get("request_id") is not None
                     or record.get("recoverable_code") is not None
                     or (
+                        record.get("requested_label") is not None
+                        and (
+                            not isinstance(record["requested_label"], str)
+                            or normalize_requested_label(record["requested_label"])
+                            != record["requested_label"]
+                        )
+                    )
+                    or (
                         record.get("consumed_by") is not None
                         and record["consumed_by"] not in state["devices"]
                     )
@@ -371,6 +390,7 @@ class RelayState:
                     record.get("device_id") not in state["devices"]
                     or not REQUEST_ID_PATTERN.fullmatch(str(record.get("request_id", "")))
                     or record.get("consumed_by") is not None
+                    or record.get("requested_label") is not None
                     or not isinstance(code, str)
                     or not CODE_PATTERN.fullmatch(code)
                     or self._code_digest(record["salt"], code) != record["digest"]
@@ -437,6 +457,7 @@ class RelayState:
         ttl_seconds: int,
         device_id: str | None = None,
         request_id: str | None = None,
+        requested_label: str | None = None,
     ) -> tuple[str, str]:
         for _ in range(100):
             code = generate_code()
@@ -455,6 +476,7 @@ class RelayState:
             "request_id": request_id,
             "consumed_by": None,
             "recoverable_code": code if kind == "pair" else None,
+            "requested_label": requested_label,
         }
         return code_id, code
 
@@ -477,11 +499,22 @@ class RelayState:
                 return code_id, value
         return None
 
-    def create_invite(self, ttl_seconds: int = DEFAULT_INVITE_TTL) -> dict[str, Any]:
+    def create_invite(
+        self,
+        ttl_seconds: int = DEFAULT_INVITE_TTL,
+        requested_label: str | None = None,
+    ) -> dict[str, Any]:
         if ttl_seconds < 60 or ttl_seconds > 86_400:
             raise StateError("invite TTL must be between 60 and 86400 seconds")
+        if requested_label is not None:
+            requested_label = normalize_requested_label(requested_label)
         with self._locked() as state:
-            _, code = self._new_code(state, "enroll", ttl_seconds)
+            _, code = self._new_code(
+                state,
+                "enroll",
+                ttl_seconds,
+                requested_label=requested_label,
+            )
             return {"code": code, "expires_at": self.clock() + ttl_seconds}
 
     def auth_check(self, username: str, password: str, source: str) -> bool:
@@ -499,7 +532,7 @@ class RelayState:
             raise StateError("control and tunnel keys must be different")
         inner_host_key = canonical_public_key(str(payload.get("inner_host_key", "")))
         tunnel_fingerprint = public_key_fingerprint(tunnel_key)
-        label = sanitize_label(str(payload.get("label", "")), "Android head unit")
+        reported_label = sanitize_label(str(payload.get("label", "")), "Android head unit")
         endpoint_mode = str(payload.get("endpoint_mode", "unknown"))
         if endpoint_mode not in {"unknown", "smart", "raw"}:
             raise StateError("invalid ADB endpoint mode")
@@ -528,6 +561,7 @@ class RelayState:
 
             device_id = secrets.token_hex(8)
             relay_port = self._allocate_port(state)
+            label = code_record["requested_label"] or reported_label
             device = {
                 "id": device_id,
                 "label": label,
@@ -778,6 +812,13 @@ class RelayState:
                 )
             return {"devices": devices}
 
+    def rename_device(self, device_id: str, label: str) -> dict[str, Any]:
+        normalized = normalize_requested_label(label)
+        with self._locked() as state:
+            device = self._require_device(state, device_id)
+            device["label"] = normalized
+            return {"device_id": device_id, "label": normalized}
+
     def remove_device(self, device_id: str) -> dict[str, Any]:
         with self._locked() as state:
             self._require_device(state, device_id, allow_expired=True)
@@ -1010,6 +1051,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     invite = subparsers.add_parser("create-invite")
     invite.add_argument("--ttl", type=int, default=DEFAULT_INVITE_TTL)
+    invite.add_argument("--label")
 
     auth = subparsers.add_parser("auth-check")
     auth.add_argument("--user", required=True)
@@ -1055,6 +1097,10 @@ def build_parser() -> argparse.ArgumentParser:
     remove = subparsers.add_parser("remove-device")
     remove.add_argument("device_id")
 
+    rename = subparsers.add_parser("rename-device")
+    rename.add_argument("device_id")
+    rename.add_argument("label")
+
     subparsers.add_parser("list-devices")
     subparsers.add_parser("doctor")
     subparsers.add_parser("migrate")
@@ -1071,7 +1117,7 @@ def main(argv: list[str] | None = None) -> int:
     state = RelayState(args.root, relay_host=args.relay_host, relay_ssh_port=args.relay_ssh_port)
     try:
         if args.action == "create-invite":
-            print_ok(state.create_invite(args.ttl))
+            print_ok(state.create_invite(args.ttl, args.label))
         elif args.action == "auth-check":
             password = sys.stdin.readline().rstrip("\r\n")
             return 0 if state.auth_check(args.user, password, args.source) else 1
@@ -1097,6 +1143,8 @@ def main(argv: list[str] | None = None) -> int:
             print_ok(state.list_devices())
         elif args.action == "remove-device":
             print_ok(state.remove_device(args.device_id))
+        elif args.action == "rename-device":
+            print_ok(state.rename_device(args.device_id, args.label))
         elif args.action == "doctor":
             result = state.doctor()
             print_ok(result)

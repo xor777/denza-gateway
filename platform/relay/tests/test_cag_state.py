@@ -76,6 +76,42 @@ class RelayStateTest(unittest.TestCase):
         self.assertIn(payload["tunnel_public_key"], self.state.authorized_keys("cag-device")[0])
         self.assertIn(payload["control_public_key"], self.state.authorized_keys("cag-control")[0])
 
+    def test_labeled_invite_overrides_device_label_and_is_idempotent(self):
+        invite = self.state.create_invite(requested_label="  Ivan \x00  -  Denza N9  ")
+        payload = {
+            "label": "BYD N9",
+            "tunnel_public_key": self.device_key,
+            "control_public_key": self.control_key,
+            "inner_host_key": self.host_key,
+            "endpoint_mode": "smart",
+            "endpoint_host": "127.0.0.1",
+        }
+
+        first = self.state.enroll(invite["code"], payload)
+        second = self.state.enroll(invite["code"], payload)
+
+        self.assertEqual("Ivan - Denza N9", first["device_label"])
+        self.assertEqual(first, second)
+
+    def test_unlabeled_invite_uses_device_reported_label(self):
+        invite = self.state.create_invite()
+        payload = {
+            "label": "BYD N9",
+            "tunnel_public_key": self.device_key,
+            "control_public_key": self.control_key,
+            "inner_host_key": self.host_key,
+            "endpoint_mode": "smart",
+            "endpoint_host": "127.0.0.1",
+        }
+
+        enrolled = self.state.enroll(invite["code"], payload)
+
+        self.assertEqual("BYD N9", enrolled["device_label"])
+
+    def test_requested_label_rejects_blank_value(self):
+        with self.assertRaisesRegex(StateError, "label"):
+            self.state.create_invite(requested_label="  \x00  ")
+
     def test_invite_cannot_enroll_a_different_device(self):
         invite, _, _ = self.enroll_device()
         with self.assertRaisesRegex(StateError, "already been used"):
@@ -175,6 +211,29 @@ class RelayStateTest(unittest.TestCase):
         self.assertTrue(result["recycle_sessions"])
         self.assertEqual(0, self.state.doctor()["devices"])
 
+    def test_rename_device_updates_admin_views(self):
+        _, _, device = self.enroll_device()
+
+        renamed = self.state.rename_device(
+            device["device_id"],
+            "  Ivan \x00  -  N9, black  ",
+        )
+
+        self.assertEqual(
+            {"device_id": device["device_id"], "label": "Ivan - N9, black"},
+            renamed,
+        )
+        self.assertEqual("Ivan - N9, black", self.state.list_devices()["devices"][0]["label"])
+        self.assertEqual("Ivan - N9, black", self.state.device_status(device["device_id"])["device_label"])
+
+    def test_rename_rejects_blank_and_truncates_long_label(self):
+        _, _, device = self.enroll_device()
+        with self.assertRaisesRegex(StateError, "label"):
+            self.state.rename_device(device["device_id"], "   ")
+
+        renamed = self.state.rename_device(device["device_id"], "x" * 100)
+        self.assertEqual("x" * 80, renamed["label"])
+
     def test_pair_commit_is_idempotent_after_lost_response(self):
         _, _, device = self.enroll_device()
         key = public_key(b"candidate")
@@ -247,7 +306,7 @@ class RelayStateTest(unittest.TestCase):
 
         self.state.migrate()
         migrated = self.raw_state()
-        self.assertEqual(2, migrated["version"])
+        self.assertEqual(3, migrated["version"])
         self.assertNotIn("auth_limits", migrated)
         self.assertEqual(self.device_key, migrated["devices"][device_id]["control_public_key"])
         self.assertEqual(
@@ -257,6 +316,26 @@ class RelayStateTest(unittest.TestCase):
         before = (root / "state.json").stat().st_mtime_ns
         self.state.migrate()
         self.assertEqual(before, (root / "state.json").stat().st_mtime_ns)
+
+    def test_v2_migration_adds_requested_label_to_existing_codes(self):
+        _, _, device = self.enroll_device()
+        self.state.pair_open(device["device_id"], "migration-request")
+        state_path = Path(self.temporary.name) / "state.json"
+        legacy = self.raw_state()
+        legacy["version"] = 2
+        for record in legacy["codes"].values():
+            record.pop("requested_label", None)
+        state_path.write_text(json.dumps(legacy))
+
+        migrated = self.state.migrate()
+        current = self.raw_state()
+
+        self.assertTrue(migrated["migrated"])
+        self.assertEqual(3, current["version"])
+        self.assertTrue(current["codes"])
+        self.assertTrue(
+            all(record["requested_label"] is None for record in current["codes"].values())
+        )
 
     def test_40_devices_over_12_months_keep_only_current_clients(self):
         devices = [self.enroll_device(f"-{index:02d}")[2] for index in range(40)]

@@ -25,6 +25,10 @@ case "${1:-}" in
     pkill -u cag-device 2>/dev/null || true
     pkill -u cag-client 2>/dev/null || true
     ;;
+  rename)
+    [ "$#" -eq 3 ] || exit 2
+    exec /opt/cag/cag-state rename-device "$2" "$3"
+    ;;
   doctor)
     [ "$#" -eq 1 ] || exit 2
     exec /opt/cag/cag-state doctor
@@ -47,7 +51,7 @@ case "${1:-}" in
     exit "$result"
     ;;
   *)
-    echo "usage: cag-admin invite [--ttl SECONDS] | list | status DEVICE_ID | remove DEVICE_ID | doctor | migrate | gc" >&2
+    echo "usage: cag-admin invite [--label LABEL] [--ttl SECONDS] | list | status DEVICE_ID | rename DEVICE_ID LABEL | remove DEVICE_ID | doctor | migrate | gc" >&2
     exit 2
     ;;
 esac
