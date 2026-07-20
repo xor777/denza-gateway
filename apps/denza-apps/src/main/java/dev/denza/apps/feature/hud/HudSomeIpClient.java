@@ -283,11 +283,7 @@ final class HudSomeIpClient {
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
 
-        boolean mirror = maneuver == HudManeuver.LEFT
-                || maneuver == HudManeuver.SLIGHT_LEFT
-                || maneuver == HudManeuver.SHARP_LEFT
-                || maneuver == HudManeuver.U_TURN_LEFT
-                || maneuver == HudManeuver.ROUNDABOUT_LEFT;
+        boolean mirror = shouldMirrorIcon(maneuver);
         if (mirror) {
             canvas.scale(-1f, 1f, size / 2f, size / 2f);
         }
@@ -329,6 +325,14 @@ final class HudSomeIpClient {
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
         bitmap.recycle();
         return output.toByteArray();
+    }
+
+    static boolean shouldMirrorIcon(HudManeuver maneuver) {
+        return maneuver == HudManeuver.LEFT
+                || maneuver == HudManeuver.SLIGHT_LEFT
+                || maneuver == HudManeuver.SHARP_LEFT
+                || maneuver == HudManeuver.U_TURN_RIGHT
+                || maneuver == HudManeuver.ROUNDABOUT_LEFT;
     }
 
     private static void drawArrow(Canvas canvas, Paint paint, float x, float y, float angleDegrees) {

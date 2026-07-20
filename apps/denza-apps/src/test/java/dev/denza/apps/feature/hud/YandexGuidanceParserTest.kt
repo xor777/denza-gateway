@@ -1,7 +1,9 @@
 package dev.denza.apps.feature.hud
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class YandexGuidanceParserTest {
@@ -31,9 +33,44 @@ class YandexGuidanceParserTest {
         assertEquals(HudManeuver.SLIGHT_LEFT, YandexGuidanceParser.parseManeuver("Keep left at the fork"))
         assertEquals(HudManeuver.SHARP_RIGHT, YandexGuidanceParser.parseManeuver("Make a sharp right turn"))
         assertEquals(HudManeuver.U_TURN_LEFT, YandexGuidanceParser.parseManeuver("Make a U-turn"))
-        assertEquals(HudManeuver.ROUNDABOUT_RIGHT, YandexGuidanceParser.parseManeuver("Enter the roundabout"))
+        assertEquals(HudManeuver.ROUNDABOUT_LEFT, YandexGuidanceParser.parseManeuver("Enter the roundabout"))
         assertEquals(1_609, YandexGuidanceParser.parseDistance("1", "mi"))
         assertEquals(30, YandexGuidanceParser.parseDistance("100", "ft"))
+    }
+
+    @Test
+    fun keepsUturnAndRoundaboutDirectionsConsistent() {
+        assertEquals(HudManeuver.U_TURN_LEFT, YandexGuidanceParser.parseManeuver("Развернитесь"))
+        assertEquals(HudManeuver.U_TURN_RIGHT, YandexGuidanceParser.parseManeuver("Разворот направо"))
+        assertEquals(HudManeuver.U_TURN_LEFT, YandexGuidanceParser.parseManeuver("Make a U‑turn"))
+        assertEquals(HudManeuver.ROUNDABOUT_LEFT, YandexGuidanceParser.parseManeuver("Въезжайте на круговое движение"))
+        assertEquals(HudManeuver.ROUNDABOUT_LEFT, YandexGuidanceParser.parseManeuver("На кольце второй съезд"))
+        assertEquals(HudManeuver.ROUNDABOUT_RIGHT, YandexGuidanceParser.parseManeuver("At the roundabout, exit right"))
+        assertEquals(HudManeuver.SLIGHT_LEFT, YandexGuidanceParser.parseManeuver("Держитесь слева"))
+        assertEquals(HudManeuver.SLIGHT_LEFT, YandexGuidanceParser.parseManeuver("Плавный левый поворот"))
+        assertEquals(HudManeuver.SHARP_RIGHT, YandexGuidanceParser.parseManeuver("Резкий правый поворот"))
+        assertEquals(HudManeuver.RIGHT, YandexGuidanceParser.parseManeuver("Поверните направо на Круглую улицу"))
+        assertEquals(HudManeuver.STRAIGHT, YandexGuidanceParser.parseManeuver("Направляйтесь прямо"))
+        assertEquals(HudManeuver.UNKNOWN, YandexGuidanceParser.parseManeuver("Take the exit"))
+    }
+
+    @Test
+    fun mirrorsOnlyIconsWhoseBaseArtworkFacesTheOtherWay() {
+        val mirrored = setOf(
+            HudManeuver.LEFT,
+            HudManeuver.SLIGHT_LEFT,
+            HudManeuver.SHARP_LEFT,
+            HudManeuver.U_TURN_RIGHT,
+            HudManeuver.ROUNDABOUT_LEFT,
+        )
+
+        HudManeuver.entries.forEach { maneuver ->
+            if (maneuver in mirrored) {
+                assertTrue(maneuver.name, HudSomeIpClient.shouldMirrorIcon(maneuver))
+            } else {
+                assertFalse(maneuver.name, HudSomeIpClient.shouldMirrorIcon(maneuver))
+            }
+        }
     }
 
     @Test

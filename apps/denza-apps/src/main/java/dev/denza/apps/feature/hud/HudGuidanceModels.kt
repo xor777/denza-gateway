@@ -59,22 +59,27 @@ object YandexGuidanceParser {
 
     @JvmStatic
     fun parseManeuver(instruction: String): HudManeuver {
-        val value = instruction.lowercase(Locale.ROOT).replace('ё', 'е')
+        val value = instruction.lowercase(Locale.ROOT)
+            .replace('ё', 'е')
+            .replace(UNICODE_DASHES, "-")
         val left = value.contains("налево") || value.contains("влево") || value.contains("левее") ||
+            value.contains("слева") || LEFT_ADJECTIVE.containsMatchIn(value) ||
             value.contains("left")
         val right = value.contains("направо") || value.contains("вправо") || value.contains("правее") ||
+            value.contains("справа") || RIGHT_ADJECTIVE.containsMatchIn(value) ||
             value.contains("right")
-        val uTurn = value.contains("разворот") || value.contains("u-turn") || value.contains("u turn") ||
-            value.contains("turn around")
-        val roundabout = value.contains("круг") || value.contains("кольц") || value.contains("roundabout")
+        val uTurn = value.contains("разворот") || value.contains("развернит") ||
+            value.contains("u-turn") || value.contains("u turn") || value.contains("turn around")
+        val roundabout = ROUNDABOUT_RUSSIAN.containsMatchIn(value) ||
+            value.contains("roundabout") || value.contains("traffic circle")
         val sharp = value.contains("крут") || value.contains("резк") || value.contains("sharp")
         val slight = value.contains("плавн") || value.contains("держитесь") || value.contains("левее") ||
             value.contains("правее") || value.contains("slight") || value.contains("keep ") ||
             value.contains("bear ") || value.contains("fork") || value.contains("merge")
 
         return when {
-            roundabout && left -> HudManeuver.ROUNDABOUT_LEFT
-            roundabout -> HudManeuver.ROUNDABOUT_RIGHT
+            roundabout && right -> HudManeuver.ROUNDABOUT_RIGHT
+            roundabout -> HudManeuver.ROUNDABOUT_LEFT
             uTurn && right -> HudManeuver.U_TURN_RIGHT
             uTurn -> HudManeuver.U_TURN_LEFT
             sharp && left -> HudManeuver.SHARP_LEFT
@@ -120,6 +125,12 @@ object YandexGuidanceParser {
     private val HOURS = Regex("([0-9]+)\\s*(?:ч|час(?:а|ов)?|h|hr|hrs|hour|hours)(?=\\s|$)")
     private val MINUTES = Regex("([0-9]+)\\s*(?:мин(?:ут[аы]?)?|min|mins|minute|minutes|m)(?=\\s|$)")
     private val WHITESPACE = Regex("\\s+")
+    private val UNICODE_DASHES = Regex("[\\u2010-\\u2015\\u2212]")
+    private val LEFT_ADJECTIVE = Regex("(?:^|[^\\p{L}])лев(?:ый|ая|ое|ые|ого|ой|ую|ом|ых|ым|ыми)(?=$|[^\\p{L}])")
+    private val RIGHT_ADJECTIVE = Regex("(?:^|[^\\p{L}])прав(?:ый|ая|ое|ые|ого|ой|ую|ом|ых|ым|ыми)(?=$|[^\\p{L}])")
+    private val ROUNDABOUT_RUSSIAN = Regex(
+        "(?:^|[^\\p{L}])(?:круг(?:ов\\p{L}*|а|е|у|ом)?|кольц(?:о|а|е|у|ом)|кольцев\\p{L}*\\s+движен\\p{L}*)(?=$|[^\\p{L}])",
+    )
 }
 
 object HudGuidanceRuntime {
