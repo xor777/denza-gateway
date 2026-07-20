@@ -17,7 +17,7 @@ product code, remote-access infrastructure, and reverse-engineering experiments.
 
 </div>
 
-> [!CAUTION]
+> [!IMPORTANT]
 > **Compatibility and responsibility.** All research, development, and live
 > validation in this repository has been performed exclusively on the author's
 > Denza Z9GT, using the particular firmware builds installed at the time of each
