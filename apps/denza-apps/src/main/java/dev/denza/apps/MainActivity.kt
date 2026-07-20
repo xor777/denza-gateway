@@ -35,6 +35,9 @@ class MainActivity : ComponentActivity() {
                     onChooseApps = DenzaAppRepository::showAppPicker,
                     onCloseAppPicker = DenzaAppRepository::hideAppPicker,
                     onToggleApp = DenzaAppRepository::toggleAppSelection,
+                    onChooseFseApp = DenzaAppRepository::showFseInstallerPicker,
+                    onCloseFseInstallerPicker = DenzaAppRepository::hideFseInstallerPicker,
+                    onInstallFseApp = DenzaAppRepository::installOnPassengerScreen,
                 )
             },
         )

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.VerticalSplit
 import androidx.compose.material.icons.outlined.Visibility
@@ -75,6 +76,7 @@ import dev.denza.apps.SimulcastAppChoice
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
 import dev.denza.apps.feature.cluster.ClusterMapPlacement
+import dev.denza.apps.feature.fse.FseInstallApp
 import dev.denza.apps.feature.mirrors.MirrorsPosition
 import kotlinx.coroutines.flow.StateFlow
 
@@ -115,6 +117,9 @@ fun DenzaAppsRoot(
     onChooseApps: () -> Unit,
     onCloseAppPicker: () -> Unit,
     onToggleApp: (String) -> Unit,
+    onChooseFseApp: () -> Unit,
+    onCloseFseInstallerPicker: () -> Unit,
+    onInstallFseApp: (String) -> Unit,
 ) {
     val uiState by state.collectAsState()
     var showSupport by remember { mutableStateOf(false) }
@@ -362,7 +367,16 @@ fun DenzaAppsRoot(
                             snapshot = uiState.hudGuidance,
                             onToggle = onToggleHudGuidance,
                         )
-                        Spacer(Modifier.weight(1f))
+                        CompactActionCard(
+                            modifier = Modifier.weight(1f),
+                            icon = Icons.Outlined.InstallMobile,
+                            title = "Установить приложение",
+                            subtitle = uiState.fseInstaller.message.ifBlank {
+                                "На пассажирский экран"
+                            },
+                            snapshot = uiState.fseInstaller,
+                            onClick = onChooseFseApp,
+                        )
                     }
                     Spacer(Modifier.weight(1f))
                 }
@@ -410,6 +424,14 @@ fun DenzaAppsRoot(
             apps = uiState.navigationAppChoices,
             onSelect = onSelectNavigationApp,
             onDismiss = onCloseNavigationPicker,
+        )
+    }
+    if (uiState.fseInstallerPickerVisible) {
+        FseInstallerPickerDialog(
+            apps = uiState.fseInstallApps,
+            message = uiState.fseInstallerMessage,
+            onInstall = onInstallFseApp,
+            onDismiss = onCloseFseInstallerPicker,
         )
     }
 }
@@ -496,6 +518,66 @@ private fun CompactToggleCard(
                 enabled = snapshot.status != FeatureStatus.STARTING &&
                     snapshot.status != FeatureStatus.RECOVERING,
             )
+        }
+    }
+}
+
+@Composable
+private fun CompactActionCard(
+    modifier: Modifier,
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    snapshot: FeatureSnapshot,
+    onClick: () -> Unit,
+) {
+    val busy = snapshot.status == FeatureStatus.STARTING ||
+        snapshot.status == FeatureStatus.RECOVERING
+    val failed = snapshot.status == FeatureStatus.ERROR
+    Card(
+        modifier = modifier
+            .height(96.dp)
+            .clickable(enabled = !busy, onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = SurfaceColor),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(Elevated, RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(icon, null, tint = if (failed) Warning else Accent)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    color = Ink,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
+                Text(
+                    subtitle,
+                    color = if (failed) Warning else Muted,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (busy) {
+                Spacer(Modifier.width(12.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = Warning,
+                )
+            }
         }
     }
 }
@@ -687,6 +769,120 @@ private fun NavigationChoiceTile(app: NavigationAppChoice, onClick: () -> Unit) 
                 fontSize = 13.sp,
                 fontWeight = if (app.selected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 2,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FseInstallerPickerDialog(
+    apps: List<FseInstallApp>,
+    message: String,
+    onInstall: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.92f),
+            color = SurfaceColor,
+            shape = RoundedCornerShape(26.dp),
+        ) {
+            Column(modifier = Modifier.padding(28.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column {
+                        Text(
+                            "Установка на пассажирский экран",
+                            color = Ink,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "Выберите приложение с головного устройства",
+                            color = Muted,
+                            fontSize = 14.sp,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = onDismiss) { Text("Закрыть") }
+                }
+                if (message.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(message, color = Warning, fontSize = 14.sp)
+                }
+                Spacer(Modifier.height(18.dp))
+                if (apps.isEmpty()) {
+                    Text("Приложения не найдены", color = Warning, fontSize = 15.sp)
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(6),
+                        modifier = Modifier.fillMaxWidth().height(380.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(apps, key = { it.packageName }) { app ->
+                            FseInstallChoiceTile(app = app) { onInstall(app.packageName) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FseInstallChoiceTile(app: FseInstallApp, onClick: () -> Unit) {
+    val bitmap = remember(app.packageName, app.icon) {
+        app.icon?.toBitmap(128, 128)?.asImageBitmap()
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(126.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (app.installable) Elevated else DisabledSurface,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (bitmap != null) {
+                Image(
+                    painter = BitmapPainter(bitmap),
+                    contentDescription = null,
+                    modifier = Modifier.size(50.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.Apps,
+                    null,
+                    modifier = Modifier.size(46.dp),
+                    tint = DisabledMuted,
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                app.label,
+                color = if (app.installable) Ink else DisabledInk,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                if (app.installable) app.versionName.ifBlank { "Готово к установке" }
+                else app.unavailableReason,
+                color = if (app.installable) Muted else DisabledMuted,
+                fontSize = 9.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

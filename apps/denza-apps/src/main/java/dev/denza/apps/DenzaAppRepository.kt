@@ -14,6 +14,9 @@ import dev.denza.apps.feature.cluster.ClusterDisplayDescriptor
 import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterMapPlacement
 import dev.denza.apps.feature.cluster.ClusterSceneService
+import dev.denza.apps.feature.fse.FseAppInstaller
+import dev.denza.apps.feature.fse.FseInstallApp
+import dev.denza.apps.feature.fse.FseInstallResult
 import dev.denza.apps.feature.hud.HudGuidanceRuntime
 import dev.denza.apps.feature.hud.HudGuidanceSettings
 import dev.denza.apps.feature.mirrors.MirrorsPosition
@@ -56,6 +59,11 @@ data class DenzaUiState(
     ),
     val splitScreen: FeatureSnapshot = FeatureReducer.disabled(FeatureId.SPLIT_SCREEN),
     val hudGuidance: FeatureSnapshot = FeatureReducer.disabled(FeatureId.HUD_GUIDANCE),
+    val fseInstaller: FeatureSnapshot = FeatureSnapshot(
+        id = FeatureId.FSE_INSTALLER,
+        desiredEnabled = false,
+        status = FeatureStatus.READY,
+    ),
     val navigationButtonLabel: String = "Открыть",
     val navigationAutomatic: Boolean = false,
     val navigationPlacement: ClusterMapPlacement = ClusterMapPlacement.FULL,
@@ -73,6 +81,9 @@ data class DenzaUiState(
     val appPickerVisible: Boolean = false,
     val appChoices: List<SimulcastAppChoice> = emptyList(),
     val appPickerMessage: String = "",
+    val fseInstallerPickerVisible: Boolean = false,
+    val fseInstallApps: List<FseInstallApp> = emptyList(),
+    val fseInstallerMessage: String = "",
 )
 
 /** Android-facing state owner shared by the Compose shell and runtime services. */
@@ -191,6 +202,81 @@ object DenzaAppRepository {
 
     fun hideAppPicker() {
         mutableState.value = mutableState.value.copy(appPickerVisible = false)
+    }
+
+    fun showFseInstallerPicker() {
+        val context = appContext ?: return
+        mutableState.value = mutableState.value.copy(
+            fseInstallerPickerVisible = true,
+            fseInstallApps = FseAppInstaller.installedApps(context),
+            fseInstallerMessage = "",
+        )
+    }
+
+    fun hideFseInstallerPicker() {
+        mutableState.value = mutableState.value.copy(fseInstallerPickerVisible = false)
+    }
+
+    fun installOnPassengerScreen(packageName: String) {
+        val context = appContext ?: return
+        val current = mutableState.value
+        if (current.fseInstaller.status == FeatureStatus.STARTING ||
+            current.fseInstaller.status == FeatureStatus.RECOVERING
+        ) {
+            return
+        }
+        val app = current.fseInstallApps.firstOrNull { it.packageName == packageName }
+        if (app == null) {
+            mutableState.value = current.copy(fseInstallerMessage = "Приложение больше не найдено")
+            return
+        }
+        if (!app.installable) {
+            mutableState.value = current.copy(
+                fseInstallerMessage = app.unavailableReason.ifBlank { "APK недоступен" },
+            )
+            return
+        }
+
+        mutableState.value = current.copy(
+            fseInstallerPickerVisible = false,
+            fseInstaller = FeatureSnapshot(
+                id = FeatureId.FSE_INSTALLER,
+                desiredEnabled = false,
+                status = FeatureStatus.STARTING,
+                message = "Подготавливаю ${app.label}",
+            ),
+        )
+        executor.execute {
+            val result = FseAppInstaller.install(context, packageName) { message ->
+                mutableState.value = mutableState.value.copy(
+                    fseInstaller = FeatureSnapshot(
+                        id = FeatureId.FSE_INSTALLER,
+                        desiredEnabled = false,
+                        status = FeatureStatus.STARTING,
+                        message = message,
+                    ),
+                )
+            }
+            mutableState.value = when (result) {
+                is FseInstallResult.Installed -> mutableState.value.copy(
+                    fseInstaller = FeatureSnapshot(
+                        id = FeatureId.FSE_INSTALLER,
+                        desiredEnabled = false,
+                        status = FeatureStatus.READY,
+                        message = "Установлено: ${result.app.label}",
+                    ),
+                )
+                is FseInstallResult.Failed -> mutableState.value.copy(
+                    fseInstaller = FeatureSnapshot(
+                        id = FeatureId.FSE_INSTALLER,
+                        desiredEnabled = false,
+                        status = FeatureStatus.ERROR,
+                        message = result.message,
+                        details = result.details,
+                    ),
+                )
+            }
+        }
     }
 
     fun toggleAppSelection(packageName: String) {
@@ -636,7 +722,7 @@ object DenzaAppRepository {
     }
 
     private fun diagnostics(context: Context): String = buildString {
-        appendLine("Версия=0.2.0")
+        appendLine("Версия=0.3.0")
         appendLine("DiShare=${yesNo(isInstalled(context.packageManager, DISHARE_PACKAGE))}")
         appendLine("Доступ поверх окон=${yesNo(hasOverlayPermission(context))}")
         appendLine("Управление интерфейсом=${yesNo(isAccessibilityEnabled(context))}")
@@ -673,6 +759,9 @@ object DenzaAppRepository {
         val split = SplitScreenCoordinator.snapshot()
         appendLine("Split screen=${split.message.ifBlank { split.phase.name.lowercase() }}")
         appendLine("HUD-подсказки=${enabledLabel(HudGuidanceSettings.isEnabled(context))}")
+        val fseInstaller = mutableState.value.fseInstaller
+        appendLine("Установка FSE=${fseInstaller.message.ifBlank { fseInstaller.status.name.lowercase() }}")
+        fseInstaller.details?.let { appendLine("Детали FSE=$it") }
         append("Данные HUD=${HudGuidanceRuntime.details()}")
     }
 

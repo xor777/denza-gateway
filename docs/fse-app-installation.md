@@ -1,8 +1,8 @@
 # Passenger-screen (FSE) app installation
 
-Status: **working live-car research path**, verified on 2026-07-20 on a Denza
-Z9GT. This is not part of Denza Apps and must remain an explicit host-side probe
-until its security, rollback, update, and UX behavior are designed.
+Status: **working live-car path**, verified on 2026-07-20 on a Denza Z9GT and
+available as an explicit user action in Denza Apps 0.3.0. The host-side probes
+remain useful for protocol research and recovery.
 
 ## What the passenger screen is
 
@@ -148,6 +148,26 @@ Yandex Navigator was a monolithic `base.apk` on IVI. A package delivered as
 multiple split APKs is not yet supported by this probe path because the stock
 wallpaper installer selects one APK file.
 
+## Denza Apps flow
+
+Denza Apps 0.3.0 adds the **Установить приложение** card in the second row. It:
+
+1. lists non-system launcher applications installed on the main IVI, including
+   their real icon and version; BYD service packages and Chinese-labelled apps
+   are omitted from this user-facing list;
+2. checks whether the selected package has a single readable base APK;
+3. copies that APK through the existing FSE SMB mount into a unique temporary
+   resource directory;
+4. sends the stock `set_wallpaper_path` request and waits for the matching
+   `res_id` result;
+5. removes the staged APK after an explicit success or failure response.
+
+Every installation requires a tap on a particular application. There is no
+background batch installation. Apps delivered as split APKs remain visible in
+the picker but are marked **Split APK пока не поддерживается** and are not sent
+to FSE. If confirmation times out, the UI reports an uncertain result and keeps
+the staging details in diagnostics instead of claiming success.
+
 ## Known limitations and cleanup
 
 - Installation and launching are separate. The exported AutoVoice automation
@@ -162,5 +182,5 @@ wallpaper installer selects one APK file.
 - Delete staged resource directories from `/storage/FFFF-FFFC` after they are no
   longer needed. The installed package is independent of the staged APK after a
   successful `PackageInstaller` commit.
-- Do not put this path into Denza Apps or run background/unattended installs
-  without a separate product and security decision.
+- Do not turn the explicit Denza Apps action into background, batch, or
+  unattended installation without a separate product and security decision.
