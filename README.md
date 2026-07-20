@@ -69,9 +69,6 @@ flowchart LR
     Guidance --> HUD["Windshield projection"]
     Apps --> FSE["Passenger-screen installer"]
     FSE --> Passenger["Passenger FSE"]
-
-    Mirrors["Legacy Denza Mirrors"] -. "frozen reference" .-> Apps
-    Legacy["Denza Gateway"] -. "maintenance only" .-> ADB
 ```
 
 Car ADB Gateway never exposes ADB or SSH on the vehicle network. The vehicle
