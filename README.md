@@ -17,10 +17,21 @@ product code, remote-access infrastructure, and reverse-engineering experiments.
 
 </div>
 
-> [!IMPORTANT]
-> This is a hardware-specific lab, not a turnkey consumer product. Anything that
-> touches a live vehicle should be tested conservatively and treated as
-> experimental until the relevant documentation says otherwise.
+> [!CAUTION]
+> **Compatibility and responsibility.** All research, development, and live
+> validation in this repository has been performed exclusively on the author's
+> Denza Z9GT, using the particular firmware builds installed at the time of each
+> test. Compatibility with other vehicles, model years, regional configurations,
+> head-unit revisions, or firmware versions has not been established and is not
+> guaranteed. A vehicle or firmware update may change or disable previously
+> verified behavior.
+>
+> Denza Lab is an independent hobby and research project, not an official Denza
+> or BYD product. The software interacts with undocumented vehicle services and
+> is provided without warranties of functionality, compatibility, reliability,
+> or safety. You are solely responsible for evaluating the risks, keeping a
+> recovery path available, and using the software only when it is safe to do so.
+> **Use this project and its applications entirely at your own risk.**
 
 ## Portfolio
 
