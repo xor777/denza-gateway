@@ -38,7 +38,6 @@ import dev.denza.apps.feature.mirrors.MirrorSide
 import dev.denza.apps.feature.mirrors.MirrorsPosition
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
 
 /** One instrument-display scene: positioned map surface, camera overlay, diagnostics on top. */
 class ClusterSceneService : Service() {
@@ -146,13 +145,27 @@ class ClusterSceneService : Service() {
     }
 
     private fun showCamera(config: MirrorCameraConfig) {
-        val scene = prepareCameraScene() ?: return
-        handler.removeCallbacksAndMessages(null)
-        scene.showCamera(config)
-        updateNotification("Showing ${config.side.name.lowercase()} mirror")
+        cameraRuntime.starting(config.side)
+        val scene = prepareCameraScene()
+        if (scene == null) {
+            cameraRuntime.failed("camera presentation unavailable")
+            return
+        }
+        try {
+            handler.removeCallbacksAndMessages(null)
+            scene.showCamera(config)
+            updateNotification("Starting ${config.side.name.lowercase()} mirror")
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "Unable to start camera renderer", error)
+            cameraRuntime.failed("camera start failed: ${error::class.java.simpleName}")
+            cameraPresentation?.dismiss()
+            cameraPresentation = null
+            updateNotification("Camera stopped safely")
+        }
     }
 
     private fun hideCamera() {
+        cameraRuntime.idle("camera hidden")
         cameraPresentation?.dismiss()
         cameraPresentation = null
         updateNotification("Mirrors are ready")
@@ -178,18 +191,27 @@ class ClusterSceneService : Service() {
     }
 
     private fun onAvcReady(details: String) {
+        val runtime = cameraRuntime.snapshot()
+        if (runtime.phase != CameraRuntimePhase.STARTING) return
         lastCameraDetails = details
+        runtime.side?.let { cameraRuntime.ready(it, details) }
     }
 
     private fun onAvcFailure(details: String) {
+        val runtime = cameraRuntime.snapshot()
+        if (
+            runtime.phase != CameraRuntimePhase.STARTING &&
+            runtime.phase != CameraRuntimePhase.READY
+        ) return
         lastCameraDetails = details
-        avcFailureGeneration.incrementAndGet()
+        cameraRuntime.failed(details)
         cameraPresentation?.dismiss()
         cameraPresentation = null
         updateNotification("Camera stopped safely")
     }
 
     private fun stopScene(stopService: Boolean = true) {
+        cameraRuntime.idle("scene stopped")
         cameraPresentation?.dismiss()
         cameraPresentation = null
         basePresentation?.dismiss()
@@ -746,7 +768,7 @@ class ClusterSceneService : Service() {
 
         @Volatile private var active: ClusterSceneService? = null
         @Volatile private var pendingMapConsumer: MapSurfaceConsumer? = null
-        private val avcFailureGeneration = AtomicLong()
+        private val cameraRuntime = CameraRuntimeTracker()
         @Volatile var lastCameraDetails: String = ""
             private set
 
@@ -808,7 +830,7 @@ class ClusterSceneService : Service() {
             context.startService(serviceIntent(context, ACTION_STOP))
         }
 
-        fun avcFailureGeneration(): Long = avcFailureGeneration.get()
+        fun cameraRuntimeSnapshot(): CameraRuntimeSnapshot = cameraRuntime.snapshot()
 
         private fun start(context: Context, action: String) {
             context.startForegroundService(serviceIntent(context, action))

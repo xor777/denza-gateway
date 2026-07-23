@@ -1,5 +1,21 @@
 package dev.denza.apps.feature.cluster
 
+import dev.denza.apps.feature.mirrors.MirrorSide
+
+enum class CameraRuntimePhase {
+    IDLE,
+    STARTING,
+    READY,
+    FAILED,
+}
+
+data class CameraRuntimeSnapshot(
+    val phase: CameraRuntimePhase = CameraRuntimePhase.IDLE,
+    val side: MirrorSide? = null,
+    val generation: Long = 0L,
+    val details: String = "",
+)
+
 data class ClusterDisplayDescriptor(
     val id: Int,
     val name: String,

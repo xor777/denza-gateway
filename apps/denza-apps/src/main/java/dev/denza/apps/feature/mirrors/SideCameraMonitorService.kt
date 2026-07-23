@@ -14,6 +14,7 @@ import dev.denza.apps.DenzaAppRepository
 import dev.denza.apps.feature.cluster.ClusterDisplayResolver
 import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterSceneService
+import dev.denza.apps.feature.cluster.CameraRuntimeSnapshot
 import dev.denza.disharebridge.LocalAdbClient
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -23,11 +24,10 @@ class SideCameraMonitorService : Service() {
     private var executor: ScheduledExecutorService? = null
     private lateinit var adb: LocalAdbClient
     @Volatile private var running = false
-    private var currentSide: MirrorSide? = null
+    private var transitionState = MirrorTransitionState()
+    private var lastPublishedStatus: Pair<MirrorSide?, String>? = null
     private var clusterDisplayId: Int? = null
     private var lastDisplayResolveMs = 0L
-    private var lastStartFailureMs = 0L
-    private var overlayStartedMs = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -70,7 +70,7 @@ class SideCameraMonitorService : Service() {
         executor?.shutdownNow()
         executor = null
         ClusterSceneService.hideCameraSync(FINISH_SYNC_TIMEOUT_MS)
-        currentSide = null
+        transitionState = MirrorTransitionState(details = "monitor stopped")
         setStatus(null, "monitor stopped")
     }
 
@@ -96,19 +96,9 @@ class SideCameraMonitorService : Service() {
                 right -> MirrorSide.RIGHT
                 else -> null
             }
-            when {
-                requested == currentSide -> Unit
-                requested == null -> stopOverlay("window hidden")
-                else -> {
-                    if (currentSide != null) stopOverlay("switch to ${requested.name.lowercase()}")
-                    startOverlay(requested, now)
-                }
-            }
-            if (currentSide != null && now - overlayStartedMs >= OVERLAY_DURATION_MS) {
-                stopOverlay("timeout")
-            }
+            applyTransition(requested, now)
         } catch (error: Exception) {
-            setStatus(currentSide, "ADB monitor error: ${shortError(error)}")
+            setStatus(observedSide(), "ADB monitor error: ${shortError(error)}")
             updateNotification("ADB access needs attention")
         }
     }
@@ -134,9 +124,39 @@ class SideCameraMonitorService : Service() {
         }
     }
 
-    private fun startOverlay(side: MirrorSide, now: Long) {
-        if (currentSide == side) return
-        if (now - lastStartFailureMs < OVERLAY_RETRY_MS) return
+    private fun applyTransition(requested: MirrorSide?, now: Long) {
+        val runtime = ClusterSceneService.cameraRuntimeSnapshot()
+        val result = MirrorTransitionReducer.reduce(
+            transitionState,
+            MirrorTransitionObservation(
+                requestedSide = requested,
+                runtime = runtime,
+                nowMs = now,
+            ),
+        )
+        transitionState = result.state
+        when (val command = result.command) {
+            is MirrorTransitionCommand.Show -> startOverlay(command.side, now, runtime)
+            MirrorTransitionCommand.Hide -> {
+                if (!ClusterSceneService.hideCameraSync(FINISH_SYNC_TIMEOUT_MS)) {
+                    transitionState = MirrorTransitionReducer.quarantine(
+                        transitionState,
+                        ClusterSceneService.cameraRuntimeSnapshot(),
+                        now,
+                        "camera hide timed out",
+                    )
+                }
+            }
+            MirrorTransitionCommand.None -> Unit
+        }
+        publishTransition()
+    }
+
+    private fun startOverlay(
+        side: MirrorSide,
+        now: Long,
+        runtime: CameraRuntimeSnapshot,
+    ) {
         val config = MirrorCameraConfig(
             side = side,
             position = MirrorsSettings.position(this),
@@ -144,24 +164,37 @@ class SideCameraMonitorService : Service() {
         )
         try {
             ClusterSceneService.showCamera(this, config)
-            currentSide = side
-            overlayStartedMs = now
-            setStatus(side, "showing ${side.name.lowercase()}")
-            updateNotification("Showing ${side.name.lowercase()} mirror")
         } catch (error: RuntimeException) {
-            lastStartFailureMs = now
-            setStatus(null, "camera start failed: ${shortError(error)}")
-            updateNotification("Mirror needs attention")
+            transitionState = MirrorTransitionReducer.quarantine(
+                transitionState,
+                runtime,
+                now,
+                "camera dispatch failed: ${shortError(error)}",
+            )
         }
     }
 
-    private fun stopOverlay(reason: String) {
-        val stopped = currentSide
-        currentSide = null
-        ClusterSceneService.hideCameraSync(FINISH_SYNC_TIMEOUT_MS)
-        setStatus(null, "stopped ${stopped?.name?.lowercase().orEmpty()}: $reason")
-        updateNotification("Mirrors are ready")
+    private fun publishTransition() {
+        val side = observedSide()
+        val details = transitionState.details.ifBlank {
+            transitionState.phase.name.lowercase()
+        }
+        val status = side to details
+        if (lastPublishedStatus == status) return
+        lastPublishedStatus = status
+        setStatus(side, details)
+        updateNotification(
+            when (transitionState.phase) {
+                MirrorTransitionPhase.STARTING -> "Starting ${transitionState.side?.name?.lowercase()} mirror"
+                MirrorTransitionPhase.SHOWING -> "Showing ${transitionState.side?.name?.lowercase()} mirror"
+                MirrorTransitionPhase.QUARANTINED -> "Mirror waiting for neutral"
+                MirrorTransitionPhase.IDLE -> "Mirrors are ready"
+            },
+        )
     }
+
+    private fun observedSide(): MirrorSide? =
+        transitionState.side.takeIf { transitionState.phase == MirrorTransitionPhase.SHOWING }
 
     private fun setStatus(side: MirrorSide?, details: String) {
         MirrorsSettings.setObserved(this, side, details)
@@ -200,10 +233,8 @@ class SideCameraMonitorService : Service() {
         private const val ACTION_START = "dev.denza.apps.mirrors.START"
         private const val ACTION_STOP = "dev.denza.apps.mirrors.STOP"
         private const val POLL_MS = 100L
-        private const val OVERLAY_RETRY_MS = 1_500L
         private const val DISPLAY_RETRY_MS = 2_000L
         private const val FINISH_SYNC_TIMEOUT_MS = 250L
-        private const val OVERLAY_DURATION_MS = 300_000L
 
         fun start(context: Context) {
             MirrorsSettings.setEnabled(context, true)
