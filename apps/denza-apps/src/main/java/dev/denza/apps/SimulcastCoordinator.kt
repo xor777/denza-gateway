@@ -24,17 +24,33 @@ data class SimulcastEnvironment(
 }
 
 sealed interface SimulcastReconcileEvent {
-    data object Refresh : SimulcastReconcileEvent
+    val setupRunning: Boolean
+
+    data object Refresh : SimulcastReconcileEvent {
+        override val setupRunning: Boolean = false
+    }
+
     data class Blocked(
         val message: String,
         val selectedAppCount: Int,
-    ) : SimulcastReconcileEvent
-    data object Repairing : SimulcastReconcileEvent
-    data object Repaired : SimulcastReconcileEvent
+    ) : SimulcastReconcileEvent {
+        override val setupRunning: Boolean = false
+    }
+
+    data object Repairing : SimulcastReconcileEvent {
+        override val setupRunning: Boolean = true
+    }
+
+    data object Repaired : SimulcastReconcileEvent {
+        override val setupRunning: Boolean = false
+    }
+
     data class RepairFailed(
         val message: String,
         val details: String?,
-    ) : SimulcastReconcileEvent
+    ) : SimulcastReconcileEvent {
+        override val setupRunning: Boolean = false
+    }
 }
 
 /**

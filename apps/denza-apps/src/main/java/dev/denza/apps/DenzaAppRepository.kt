@@ -471,6 +471,7 @@ object DenzaAppRepository {
             repairMissingSetup = repairMissingSetup,
             forceRepair = forceRepair,
         ) { event ->
+            mutableState.value = mutableState.value.copy(setupRunning = event.setupRunning)
             when (event) {
                 SimulcastReconcileEvent.Refresh -> refresh()
                 is SimulcastReconcileEvent.Blocked -> {
@@ -489,13 +490,9 @@ object DenzaAppRepository {
                             FeatureReducer.starting(FeatureId.SIMULCAST),
                             "Восстанавливаю доступ",
                         ),
-                        setupRunning = true,
                     )
                 }
-                SimulcastReconcileEvent.Repaired -> {
-                    mutableState.value = mutableState.value.copy(setupRunning = false)
-                    refresh()
-                }
+                SimulcastReconcileEvent.Repaired -> refresh()
                 is SimulcastReconcileEvent.RepairFailed -> {
                     mutableState.value = mutableState.value.copy(
                         simulcast = FeatureReducer.needsAction(
@@ -503,7 +500,6 @@ object DenzaAppRepository {
                             event.message,
                             event.details,
                         ),
-                        setupRunning = false,
                         technicalDetails = supportDiagnostics(context),
                     )
                 }
