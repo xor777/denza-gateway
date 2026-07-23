@@ -184,9 +184,11 @@ object MirrorTransitionReducer {
         }
         if (observation.requestedSide == null) {
             return MirrorTransitionResult(
-                MirrorTransitionState(
-                    runtimeGeneration = observation.runtime.generation,
-                    details = "window hidden",
+                quarantine(
+                    state,
+                    observation.runtime,
+                    observation.nowMs,
+                    "waiting for confirmed neutral",
                 ),
                 MirrorTransitionCommand.Hide,
             )

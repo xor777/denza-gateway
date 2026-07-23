@@ -59,6 +59,35 @@ class MirrorTransitionReducerTest {
     }
 
     @Test
+    fun oneNeutralSampleCannotBypassQuarantineBetweenSides() {
+        val showing = MirrorTransitionState(
+            phase = MirrorTransitionPhase.SHOWING,
+            side = MirrorSide.LEFT,
+            phaseStartedAtMs = 100L,
+            runtimeGeneration = 2L,
+        )
+
+        val firstNeutral = reduce(
+            state = showing,
+            requested = null,
+            runtime = runtime(CameraRuntimePhase.READY, MirrorSide.LEFT, generation = 2L),
+            nowMs = 200L,
+        )
+        assertEquals(MirrorTransitionPhase.QUARANTINED, firstNeutral.state.phase)
+        assertEquals(0, firstNeutral.state.neutralSamples)
+        assertEquals(MirrorTransitionCommand.Hide, firstNeutral.command)
+
+        val immediateRight = reduce(
+            state = firstNeutral.state,
+            requested = MirrorSide.RIGHT,
+            runtime = runtime(CameraRuntimePhase.IDLE, generation = 3L),
+            nowMs = 300L,
+        )
+        assertEquals(MirrorTransitionPhase.QUARANTINED, immediateRight.state.phase)
+        assertEquals(MirrorTransitionCommand.None, immediateRight.command)
+    }
+
+    @Test
     fun avcFailureQuarantinesWithoutRetry() {
         val starting = MirrorTransitionState(
             phase = MirrorTransitionPhase.STARTING,

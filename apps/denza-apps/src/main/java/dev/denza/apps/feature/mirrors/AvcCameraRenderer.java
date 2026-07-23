@@ -151,10 +151,29 @@ public final class AvcCameraRenderer implements TextureView.SurfaceTextureListen
         try {
             String name = client.getName();
             int bufferType = client.getSupportPushBufferType();
-            boolean initialized = client.initDisplay(surface);
-            client.setViewpoint(viewpoint);
-            listener.onReady("avc=" + name + " init=" + initialized
-                    + " buffer=" + bufferType + " viewpoint=" + viewpoint);
+            AvcInitializationGate.run(new AvcInitializationGate.Attempt() {
+                @Override
+                public boolean initDisplay() throws RemoteException {
+                    return client.initDisplay(surface);
+                }
+
+                @Override
+                public void setViewpoint() throws RemoteException {
+                    client.setViewpoint(viewpoint);
+                }
+
+                @Override
+                public void onReady() {
+                    listener.onReady("avc=" + name + " init=true"
+                            + " buffer=" + bufferType + " viewpoint=" + viewpoint);
+                }
+
+                @Override
+                public void onRejected() {
+                    listener.onFailure("com.byd.avc initDisplay returned false"
+                            + " buffer=" + bufferType + " viewpoint=" + viewpoint);
+                }
+            });
         } catch (RemoteException | RuntimeException error) {
             listener.onFailure("com.byd.avc init failed: " + shortError(error));
         }
