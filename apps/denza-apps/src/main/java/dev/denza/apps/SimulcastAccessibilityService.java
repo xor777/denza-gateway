@@ -577,7 +577,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         return null;
     }
 
-    private void addPlateWindow(View view, Rect bounds, int format) {
+    private boolean addPlateWindow(View view, Rect bounds, int format) {
         // IMPORTANT: the plate must be TOUCHABLE. BYD firmware force-dims
         // FLAG_NOT_TOUCHABLE overlays to alpha 0.8 (ignoring an explicit alpha=1),
         // which let the stock icons bleed through. A touchable window stays opaque;
@@ -595,12 +595,14 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         params.alpha = 1f;
         try {
             windowManager.addView(view, params);
+            return true;
         } catch (RuntimeException e) {
             Log.w(TAG, "add plate window failed", e);
+            return false;
         }
     }
 
-    private void addInputWindow(View view, Rect bounds) {
+    private boolean addInputWindow(View view, Rect bounds) {
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 bounds.width(),
                 bounds.height(),
@@ -613,28 +615,32 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         params.y = bounds.top;
         try {
             windowManager.addView(view, params);
+            return true;
         } catch (RuntimeException e) {
             Log.w(TAG, "add input window failed", e);
+            return false;
         }
     }
 
-    private void updateWindow(View view, SimulcastWindowReconciler.WindowSpec spec) {
+    private boolean updateWindow(View view, SimulcastWindowReconciler.WindowSpec spec) {
         if (view == null) {
-            return;
+            return false;
         }
         try {
             WindowManager.LayoutParams params =
                     (WindowManager.LayoutParams) view.getLayoutParams();
             if (params == null) {
-                return;
+                return false;
             }
             params.width = spec.width;
             params.height = spec.height;
             params.x = spec.left;
             params.y = spec.top;
             windowManager.updateViewLayout(view, params);
+            return true;
         } catch (RuntimeException error) {
             Log.w(TAG, "update overlay window failed id=" + spec.id, error);
+            return false;
         }
     }
 
@@ -659,7 +665,7 @@ public class SimulcastAccessibilityService extends AccessibilityService {
 
     private final class OverlayWindowHost implements SimulcastWindowReconciler.Host {
         @Override
-        public void add(SimulcastWindowReconciler.WindowSpec spec) {
+        public boolean add(SimulcastWindowReconciler.WindowSpec spec) {
             Rect bounds = new Rect(
                     spec.left,
                     spec.top,
@@ -667,75 +673,91 @@ public class SimulcastAccessibilityService extends AccessibilityService {
                     spec.top + spec.height);
             switch (spec.kind) {
                 case ROW_PLATE:
-                    rowPlateView = new RowPlateView(SimulcastAccessibilityService.this);
+                    RowPlateView rowCandidate =
+                            new RowPlateView(SimulcastAccessibilityService.this);
                     // Translucent corners let the native dialog body show through.
-                    addPlateWindow(rowPlateView, bounds, PixelFormat.TRANSLUCENT);
-                    break;
+                    if (addPlateWindow(rowCandidate, bounds, PixelFormat.TRANSLUCENT)) {
+                        rowPlateView = rowCandidate;
+                        return true;
+                    }
+                    return false;
                 case CENTRAL_ICON:
-                    centralIconPlateView =
+                    CentralIconPlateView iconCandidate =
                             new CentralIconPlateView(SimulcastAccessibilityService.this);
-                    centralIconPlateView.showTarget(selectedTarget);
-                    addPlateWindow(
-                            centralIconPlateView,
-                            bounds,
-                            PixelFormat.TRANSLUCENT);
-                    break;
+                    iconCandidate.showTarget(selectedTarget);
+                    if (addPlateWindow(iconCandidate, bounds, PixelFormat.TRANSLUCENT)) {
+                        centralIconPlateView = iconCandidate;
+                        return true;
+                    }
+                    return false;
                 case SLOT:
                     Slot slot = findSlot(spec.id);
                     if (slot != null) {
                         SlotView view =
                                 new SlotView(SimulcastAccessibilityService.this, slot.target);
-                        addInputWindow(view, bounds);
-                        slotViews.put(spec.id, view);
+                        if (addInputWindow(view, bounds)) {
+                            slotViews.put(spec.id, view);
+                            return true;
+                        }
                     }
-                    break;
+                    return false;
                 case CENTRAL_TOUCH:
-                    centralView = new CentralView(SimulcastAccessibilityService.this);
-                    addInputWindow(centralView, bounds);
-                    break;
+                    CentralView centralCandidate =
+                            new CentralView(SimulcastAccessibilityService.this);
+                    if (addInputWindow(centralCandidate, bounds)) {
+                        centralView = centralCandidate;
+                        return true;
+                    }
+                    return false;
             }
+            return false;
         }
 
         @Override
-        public void update(SimulcastWindowReconciler.WindowSpec spec) {
+        public boolean update(SimulcastWindowReconciler.WindowSpec spec) {
             switch (spec.kind) {
                 case ROW_PLATE:
-                    updateWindow(rowPlateView, spec);
-                    break;
+                    return updateWindow(rowPlateView, spec);
                 case CENTRAL_ICON:
-                    updateWindow(centralIconPlateView, spec);
-                    break;
+                    return updateWindow(centralIconPlateView, spec);
                 case SLOT:
-                    updateWindow(slotViews.get(spec.id), spec);
-                    break;
+                    return updateWindow(slotViews.get(spec.id), spec);
                 case CENTRAL_TOUCH:
-                    updateWindow(centralView, spec);
-                    break;
+                    return updateWindow(centralView, spec);
             }
+            return false;
         }
 
         @Override
-        public void remove(SimulcastWindowReconciler.WindowSpec spec) {
+        public boolean remove(SimulcastWindowReconciler.WindowSpec spec) {
             switch (spec.kind) {
                 case ROW_PLATE:
-                    removeView(rowPlateView);
-                    rowPlateView = null;
-                    break;
-                case CENTRAL_ICON:
-                    removeView(centralIconPlateView);
-                    centralIconPlateView = null;
-                    break;
-                case SLOT:
-                    SlotView slotView = slotViews.remove(spec.id);
-                    if (slotView != null) {
-                        removeView(slotView);
+                    if (removeView(rowPlateView)) {
+                        rowPlateView = null;
+                        return true;
                     }
-                    break;
+                    return false;
+                case CENTRAL_ICON:
+                    if (removeView(centralIconPlateView)) {
+                        centralIconPlateView = null;
+                        return true;
+                    }
+                    return false;
+                case SLOT:
+                    SlotView slotView = slotViews.get(spec.id);
+                    if (removeView(slotView)) {
+                        slotViews.remove(spec.id);
+                        return true;
+                    }
+                    return false;
                 case CENTRAL_TOUCH:
-                    removeView(centralView);
-                    centralView = null;
-                    break;
+                    if (removeView(centralView)) {
+                        centralView = null;
+                        return true;
+                    }
+                    return false;
             }
+            return false;
         }
 
         @Override
@@ -744,13 +766,15 @@ public class SimulcastAccessibilityService extends AccessibilityService {
         }
     }
 
-    private void removeView(View v) {
+    private boolean removeView(View v) {
         if (v == null || windowManager == null) {
-            return;
+            return false;
         }
         try {
             windowManager.removeView(v);
+            return true;
         } catch (RuntimeException ignored) {
+            return false;
         }
     }
 

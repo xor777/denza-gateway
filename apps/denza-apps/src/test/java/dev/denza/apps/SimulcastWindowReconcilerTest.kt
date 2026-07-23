@@ -67,6 +67,58 @@ class SimulcastWindowReconcilerTest {
         assertTrue(host.operations.isEmpty())
     }
 
+    @Test
+    fun `failed add is retried with the same plan`() {
+        host.failAdds += "slot:one"
+
+        val failed = reconciler.apply(listOf(slot("one", 0)))
+
+        assertEquals(listOf("add:slot:one"), host.operations)
+        assertFalse(failed.semanticRebuild)
+
+        host.clear()
+        val retried = reconciler.apply(listOf(slot("one", 0)))
+
+        assertEquals(listOf("add:slot:one", "raise"), host.operations)
+        assertTrue(retried.semanticRebuild)
+    }
+
+    @Test
+    fun `failed update is retried with the same geometry`() {
+        reconciler.apply(listOf(slot("one", 0)))
+        host.clear()
+        host.failUpdates += "slot:one"
+
+        val failed = reconciler.apply(listOf(slot("one", 10)))
+
+        assertEquals(listOf("update:slot:one"), host.operations)
+        assertEquals(0, failed.relayouts)
+
+        host.clear()
+        val retried = reconciler.apply(listOf(slot("one", 10)))
+
+        assertEquals(listOf("update:slot:one"), host.operations)
+        assertEquals(1, retried.relayouts)
+    }
+
+    @Test
+    fun `failed remove remains pending until the host succeeds`() {
+        reconciler.apply(listOf(slot("one", 0)))
+        host.clear()
+        host.failRemoves += "slot:one"
+
+        val failed = reconciler.apply(emptyList())
+
+        assertEquals(listOf("remove:slot:one"), host.operations)
+        assertFalse(failed.semanticRebuild)
+
+        host.clear()
+        val retried = reconciler.apply(emptyList())
+
+        assertEquals(listOf("remove:slot:one", "raise"), host.operations)
+        assertTrue(retried.semanticRebuild)
+    }
+
     private fun slot(packageName: String, left: Int) =
         SimulcastWindowReconciler.WindowSpec(
             "slot:$packageName",
@@ -89,17 +141,23 @@ class SimulcastWindowReconcilerTest {
 
     private class RecordingHost : SimulcastWindowReconciler.Host {
         val operations = mutableListOf<String>()
+        val failAdds = mutableSetOf<String>()
+        val failUpdates = mutableSetOf<String>()
+        val failRemoves = mutableSetOf<String>()
 
-        override fun add(spec: SimulcastWindowReconciler.WindowSpec) {
+        override fun add(spec: SimulcastWindowReconciler.WindowSpec): Boolean {
             operations += "add:${spec.id}"
+            return !failAdds.remove(spec.id)
         }
 
-        override fun update(spec: SimulcastWindowReconciler.WindowSpec) {
+        override fun update(spec: SimulcastWindowReconciler.WindowSpec): Boolean {
             operations += "update:${spec.id}"
+            return !failUpdates.remove(spec.id)
         }
 
-        override fun remove(spec: SimulcastWindowReconciler.WindowSpec) {
+        override fun remove(spec: SimulcastWindowReconciler.WindowSpec): Boolean {
             operations += "remove:${spec.id}"
+            return !failRemoves.remove(spec.id)
         }
 
         override fun raiseDrawLayer() {

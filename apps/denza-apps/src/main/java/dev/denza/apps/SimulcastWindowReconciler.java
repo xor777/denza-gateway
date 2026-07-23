@@ -44,11 +44,11 @@ final class SimulcastWindowReconciler {
     }
 
     interface Host {
-        void add(WindowSpec spec);
+        boolean add(WindowSpec spec);
 
-        void update(WindowSpec spec);
+        boolean update(WindowSpec spec);
 
-        void remove(WindowSpec spec);
+        boolean remove(WindowSpec spec);
 
         void raiseDrawLayer();
     }
@@ -80,9 +80,10 @@ final class SimulcastWindowReconciler {
         for (Map.Entry<String, WindowSpec> entry
                 : new LinkedHashMap<>(applied).entrySet()) {
             if (!desired.containsKey(entry.getKey())) {
-                host.remove(entry.getValue());
-                applied.remove(entry.getKey());
-                semanticRebuild = true;
+                if (host.remove(entry.getValue())) {
+                    applied.remove(entry.getKey());
+                    semanticRebuild = true;
+                }
             }
         }
 
@@ -90,13 +91,16 @@ final class SimulcastWindowReconciler {
         for (WindowSpec spec : desired.values()) {
             WindowSpec previous = applied.get(spec.id);
             if (previous == null) {
-                host.add(spec);
-                semanticRebuild = true;
+                if (host.add(spec)) {
+                    applied.put(spec.id, spec);
+                    semanticRebuild = true;
+                }
             } else if (!spec.sameGeometry(previous)) {
-                host.update(spec);
-                relayouts++;
+                if (host.update(spec)) {
+                    applied.put(spec.id, spec);
+                    relayouts++;
+                }
             }
-            applied.put(spec.id, spec);
         }
 
         if (semanticRebuild) {
