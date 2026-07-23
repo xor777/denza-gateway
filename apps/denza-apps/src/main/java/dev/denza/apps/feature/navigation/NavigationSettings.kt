@@ -1,5 +1,6 @@
 package dev.denza.apps.feature.navigation
 
+import android.annotation.SuppressLint
 import android.content.Context
 import dev.denza.apps.feature.cluster.ClusterMapPlacement
 
@@ -18,6 +19,8 @@ object NavigationSettings {
             ?: NavigationAppPolicy.DEFAULT_PACKAGE
     }
 
+    // Keep validated preference writes explicit at the navigation policy boundary.
+    @SuppressLint("UseKtx")
     fun setSelectedPackage(context: Context, packageName: String) {
         require(NavigationAppPolicy.isAllowed(packageName)) { "unsupported navigation package" }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -34,6 +37,7 @@ object NavigationSettings {
         )
     }.getOrDefault(ClusterMapPlacement.FULL)
 
+    @SuppressLint("UseKtx")
     fun setPlacement(context: Context, placement: ClusterMapPlacement) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()

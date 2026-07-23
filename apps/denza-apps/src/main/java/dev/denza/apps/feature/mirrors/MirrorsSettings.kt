@@ -1,5 +1,6 @@
 package dev.denza.apps.feature.mirrors
 
+import android.annotation.SuppressLint
 import android.content.Context
 
 enum class MirrorsPosition { SIDES, CENTER }
@@ -21,6 +22,7 @@ object MirrorsSettings {
 
     fun isEnabled(context: Context): Boolean = prefs(context).getBoolean(ENABLED, false)
 
+    @SuppressLint("UseKtx")
     fun setEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(ENABLED, enabled).apply()
     }
@@ -32,12 +34,14 @@ object MirrorsSettings {
         )
     }.getOrDefault(MirrorsPosition.SIDES)
 
+    @SuppressLint("UseKtx")
     fun setPosition(context: Context, position: MirrorsPosition) {
         prefs(context).edit().putString(POSITION, position.name).apply()
     }
 
     fun processingEnabled(context: Context): Boolean = prefs(context).getBoolean(PROCESSING, true)
 
+    @SuppressLint("UseKtx")
     fun setProcessingEnabled(context: Context, enabled: Boolean) {
         prefs(context).edit().putBoolean(PROCESSING, enabled).apply()
     }
@@ -46,6 +50,8 @@ object MirrorsSettings {
         .getString(OBSERVED_SIDE, null)
         ?.let { runCatching { MirrorSide.valueOf(it) }.getOrNull() }
 
+    // These explicit transactions are the persisted boundary read by runtime recovery.
+    @SuppressLint("UseKtx")
     fun setObserved(context: Context, side: MirrorSide?, details: String) {
         prefs(context).edit().apply {
             if (side == null) remove(OBSERVED_SIDE) else putString(OBSERVED_SIDE, side.name)

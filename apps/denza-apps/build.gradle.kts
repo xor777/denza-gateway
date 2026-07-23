@@ -39,9 +39,6 @@ android {
         disable += "OldTargetApi"
         // Dependency versions are intentionally firmware-qualified as a set.
         disable += "GradleDependency"
-        // KTX substitutions are stylistic and would add noise to this Java/Kotlin
-        // mixed module without changing the platform contract.
-        disable += "UseKtx"
     }
 }
 

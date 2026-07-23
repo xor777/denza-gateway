@@ -61,6 +61,8 @@ object ClusterDisplayResolver {
             ?.map(::describe)
             .orEmpty()
 
+    // Keep the explicit edit/apply boundary visible for the manual display override.
+    @SuppressLint("UseKtx")
     fun saveOverride(context: Context, displayId: Int?) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply {
             if (displayId == null) remove(PREF_OVERRIDE) else putInt(PREF_OVERRIDE, displayId)

@@ -1,5 +1,6 @@
 package dev.denza.apps.feature.split
 
+import android.annotation.SuppressLint
 import android.content.Context
 
 object SplitScreenSettings {
@@ -9,6 +10,8 @@ object SplitScreenSettings {
     fun isEnabled(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(ENABLED, false)
 
+    // Keep the persistent write boundary explicit for split-screen recovery.
+    @SuppressLint("UseKtx")
     fun setEnabled(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()

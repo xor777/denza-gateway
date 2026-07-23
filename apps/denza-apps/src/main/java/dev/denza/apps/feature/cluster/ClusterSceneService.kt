@@ -1,5 +1,6 @@
 package dev.denza.apps.feature.cluster
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -272,6 +273,8 @@ class ClusterSceneService : Service() {
             override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
         }
 
+        // Presentation window setup mirrors the verified platform API sequence.
+        @SuppressLint("UseKtx")
         override fun onCreate(savedInstanceState: android.os.Bundle?) {
             super.onCreate(savedInstanceState)
             window?.apply {
@@ -512,6 +515,8 @@ class ClusterSceneService : Service() {
     }
 
     /** OpenBYD-compatible navigation contrast shades, strengthened for the center panel. */
+    // Explicit save/restore calls make the destructive blend scope auditable.
+    @SuppressLint("UseKtx")
     private class ProjectionEdgeShadeView(context: Context) : View(context) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val eraseMode = PorterDuffXfermode(PorterDuff.Mode.DST_OUT)
