@@ -154,9 +154,11 @@ class ClusterSceneService : Service() {
 
     private fun showCamera(config: MirrorCameraConfig) {
         if (cameraRuntime.snapshot().phase == CameraRuntimePhase.STOPPING) {
+            Log.i(TAG, "showCamera ${config.side} rejected: cleanup in progress")
             updateNotification("Waiting for camera cleanup")
             return
         }
+        Log.i(TAG, "showCamera ${config.side}")
         cameraRuntime.starting(config.side)
         val scene = prepareCameraScene()
         if (scene == null) {
@@ -186,8 +188,10 @@ class ClusterSceneService : Service() {
             return
         }
 
+        Log.i(TAG, "hideCamera: releasing surface")
         val stopping = cameraRuntime.stopping("closing camera surface")
         presentation.dismissAfterSurfaceRelease {
+            Log.i(TAG, "hideCamera: surface released, display freed")
             val runtime = cameraRuntime.snapshot()
             if (
                 runtime.phase == CameraRuntimePhase.STOPPING &&

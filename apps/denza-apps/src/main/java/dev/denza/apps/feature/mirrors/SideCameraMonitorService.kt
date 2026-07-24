@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.util.Log
 import dev.denza.apps.MainActivity
 import dev.denza.apps.R
 import dev.denza.apps.DenzaAppRepository
@@ -139,17 +140,32 @@ class SideCameraMonitorService : Service() {
                 runtimeWindowAmbiguous = runtimeWindowAmbiguous,
             ),
         )
+        if (result.state.phase != transitionState.phase) {
+            Log.i(
+                TAG,
+                "transition ${transitionState.phase} -> ${result.state.phase}" +
+                    " (${result.state.details}); requested=$requested" +
+                    " ambiguous=$runtimeWindowAmbiguous runtime=${runtime.phase}",
+            )
+        }
         transitionState = result.state
         when (val command = result.command) {
-            is MirrorTransitionCommand.Show -> startOverlay(command.side, now, runtime)
+            is MirrorTransitionCommand.Show -> {
+                Log.i(TAG, "command: show ${command.side}")
+                startOverlay(command.side, now, runtime)
+            }
             MirrorTransitionCommand.Hide -> {
+                Log.i(TAG, "command: hide")
                 if (!ClusterSceneService.hideCameraSync(FINISH_SYNC_TIMEOUT_MS)) {
+                    Log.w(TAG, "hide did not finish within ${FINISH_SYNC_TIMEOUT_MS}ms")
                     transitionState = MirrorTransitionReducer.quarantine(
                         transitionState,
                         ClusterSceneService.cameraRuntimeSnapshot(),
                         now,
                         "camera hide timed out",
                     )
+                } else {
+                    Log.i(TAG, "command: hide finished")
                 }
             }
             MirrorTransitionCommand.None -> Unit
@@ -233,6 +249,7 @@ class SideCameraMonitorService : Service() {
     }
 
     companion object {
+        private const val TAG = "DenzaMirrorMonitor"
         private const val CHANNEL_ID = "denza_mirrors"
         private const val NOTIFICATION_ID = 4203
         private const val ACTION_START = "dev.denza.apps.mirrors.START"
