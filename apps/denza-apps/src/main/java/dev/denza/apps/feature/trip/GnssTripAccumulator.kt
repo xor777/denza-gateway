@@ -48,11 +48,6 @@ class GnssTripAccumulator(
     var variometer: Double = 0.0
         private set
 
-    var headingDeg: Double = 0.0
-        private set
-    var hasHeading: Boolean = false
-        private set
-
     /** Seconds continuously stopped; never ends the trip, only labels it. */
     var currentStopSeconds: Double = 0.0
         private set
@@ -80,8 +75,6 @@ class GnssTripAccumulator(
         longitude: Double,
         altitude: Double,
         hasAltitudeFix: Boolean,
-        bearing: Double,
-        hasBearingFix: Boolean,
         speed: Double,
         elapsedSeconds: Double,
         dt: Double,
@@ -117,11 +110,8 @@ class GnssTripAccumulator(
             pushElevation(elapsedSeconds, smoothedAltitude)
         }
 
-        // Heading from bearing while genuinely moving.
-        if (hasBearingFix && speed > 1.0) {
-            headingDeg = ((bearing % 360.0) + 360.0) % 360.0
-            hasHeading = true
-        }
+        // Heading/course now lives in the engine's CourseTracker (fed the bearing
+        // + speed + IMU yaw), so this accumulator stays position/elevation-only.
 
         // Stop detection: label crossings at 15 minutes, re-arm on movement.
         val crossed: Boolean

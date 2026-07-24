@@ -114,45 +114,56 @@ class FlightRenderer : BaseTripRenderer() {
         val tcy = vy(46f)
         val ppd = (x1 - x0) / 130f // ~130 deg visible across the tape
         val hasHeading = engine.hasHeading()
-        val hd = if (hasHeading) engine.headingDeg() else 0.0
+        // Held (stopped) course dims the tape; no course at all draws no ticks.
+        val dim = if (engine.courseDimmed()) 0.55f else 1.0f
 
         canvas.save()
         clip.rewind()
         clip.addRect(x0, vy(16f), x1, vy(74f), Path.Direction.CW)
         canvas.clipPath(clip)
-        stroke.color = TripPalette.alpha(TripPalette.MUTED, 0.5f)
-        stroke.strokeWidth = vs(1.5f)
-        val base = (hd / 10.0).roundToInt() * 10
-        var k = -13
-        while (k <= 13) {
-            val deg = base + k * 10
-            val x = tcx + ((deg - hd) * ppd).toFloat()
-            canvas.drawLine(x, tcy + vs(10f), x, tcy + vs(19f), stroke)
-            val dm = ((deg % 360) + 360) % 360
-            val lbl = when {
-                dm == 0 -> "С"
-                dm == 90 -> "В"
-                dm == 180 -> "Ю"
-                dm == 270 -> "З"
-                dm % 30 == 0 -> dm.toString()
-                else -> null
+        if (hasHeading) {
+            val hd = engine.headingDeg()
+            stroke.color = TripPalette.alpha(TripPalette.MUTED, 0.5f * dim)
+            stroke.strokeWidth = vs(1.5f)
+            val base = (hd / 10.0).roundToInt() * 10
+            var k = -13
+            while (k <= 13) {
+                val deg = base + k * 10
+                val x = tcx + ((deg - hd) * ppd).toFloat()
+                canvas.drawLine(x, tcy + vs(10f), x, tcy + vs(19f), stroke)
+                val dm = ((deg % 360) + 360) % 360
+                val lbl = when {
+                    dm == 0 -> "С"
+                    dm == 90 -> "В"
+                    dm == 180 -> "Ю"
+                    dm == 270 -> "З"
+                    dm % 30 == 0 -> dm.toString()
+                    else -> null
+                }
+                if (lbl != null) {
+                    label(canvas, lbl, x, tcy + vs(2f), 17f, TripPalette.alpha(TripPalette.MUTED, 0.85f * dim), Paint.Align.CENTER)
+                }
+                k++
             }
-            if (lbl != null) {
-                label(canvas, lbl, x, tcy + vs(2f), 17f, TripPalette.alpha(TripPalette.MUTED, 0.85f), Paint.Align.CENTER)
+            // Sun marker sits at its azimuth relative to the known course.
+            val sun = engine.sunInfo()
+            if (sun.hasPosition) {
+                val rel = ((sun.azimuthDeg - hd + 540.0) % 360.0) - 180.0
+                var sxp = tcx + (rel * ppd).toFloat()
+                sxp = sxp.coerceIn(x0 + vs(20f), x1 - vs(20f))
+                drawSun(canvas, sxp, tcy + vs(34f), vs(4.5f), dim)
             }
-            k++
-        }
-        val sun = engine.sunInfo()
-        if (hasHeading && sun.hasPosition) {
-            val rel = ((sun.azimuthDeg - hd + 540.0) % 360.0) - 180.0
-            var sxp = tcx + (rel * ppd).toFloat()
-            sxp = sxp.coerceIn(x0 + vs(20f), x1 - vs(20f))
-            drawSun(canvas, sxp, tcy + vs(34f), vs(4.5f))
+        } else {
+            // No trustworthy heading yet: a faint static baseline, no ticks, no
+            // cardinal positions (they would imply a fake 0deg), and no sun.
+            stroke.color = TripPalette.alpha(TripPalette.MUTED, 0.16f)
+            stroke.strokeWidth = vs(1.5f)
+            canvas.drawLine(x0 + vs(20f), tcy + vs(16f), x1 - vs(20f), tcy + vs(16f), stroke)
         }
         canvas.restore()
 
         // Center pointer + course readout.
-        fill.color = TripPalette.MINT
+        fill.color = TripPalette.alpha(TripPalette.MINT, if (hasHeading) dim else 0.4f)
         val pointer = fillPath
         pointer.rewind()
         pointer.moveTo(tcx, tcy + vs(20f))
@@ -160,14 +171,18 @@ class FlightRenderer : BaseTripRenderer() {
         pointer.lineTo(tcx + vs(6f), tcy + vs(31f))
         pointer.close()
         canvas.drawPath(pointer, fill)
-        val course = if (hasHeading) "курс ${(((hd % 360) + 360) % 360).roundToInt()}°" else "курс —"
-        value(canvas, course, tcx, tcy + vs(58f), 21f, TripPalette.INK, Paint.Align.CENTER)
+        val course = if (hasHeading) {
+            "курс ${engine.headingDeg().roundToInt() % 360}°"
+        } else {
+            "курс —"
+        }
+        value(canvas, course, tcx, tcy + vs(58f), 21f, TripPalette.alpha(TripPalette.INK, if (hasHeading) dim else 0.55f), Paint.Align.CENTER)
     }
 
-    private fun drawSun(canvas: Canvas, cx: Float, cy: Float, r: Float) {
-        fill.color = TripPalette.AMBER
+    private fun drawSun(canvas: Canvas, cx: Float, cy: Float, r: Float, alpha: Float = 1f) {
+        fill.color = TripPalette.alpha(TripPalette.AMBER, alpha)
         canvas.drawCircle(cx, cy, r, fill)
-        stroke.color = TripPalette.AMBER
+        stroke.color = TripPalette.alpha(TripPalette.AMBER, alpha)
         stroke.strokeWidth = vs(1.5f)
         var k = 0
         while (k < 8) {

@@ -33,6 +33,7 @@ class TripEngine(private val startElapsedMs: Long) {
     private val agitation = AgitationTracker()
     private val buckets = RmsBucketAggregator()
     private val gnss = GnssTripAccumulator()
+    private val course = CourseTracker()
 
     private var lastImuMs = 0L
     private var haveImu = false
@@ -115,6 +116,8 @@ class TripEngine(private val startElapsedMs: Long) {
         detectTurn(reading.yawRate, dt)
         detectSerpentine(reading.yawRate)
         detectCalm(a, dt)
+        // Feed yaw into the held course so parking turns rotate the compass tape.
+        course.onYaw(reading.yawRate, dt)
     }
 
     fun onLocation(
@@ -140,8 +143,9 @@ class TripEngine(private val startElapsedMs: Long) {
         val hadAlt = gnss.hasAltitude
         val crossedStop = gnss.onFix(
             latitude, longitude, altitude, hasAltitude,
-            bearing, hasBearing, speed, elapsedSeconds, dt,
+            speed, elapsedSeconds, dt,
         )
+        course.onFix(hasBearing, bearing, speed, dt)
 
         lastLat = latitude
         lastLon = longitude
@@ -357,8 +361,11 @@ class TripEngine(private val startElapsedMs: Long) {
     fun variometer(): Double = gnss.variometer
     fun tripClimbMeters(): Double = gnss.tripClimbMeters
     fun distanceMeters(): Double = gnss.distanceMeters
-    fun headingDeg(): Double = gnss.headingDeg
-    fun hasHeading(): Boolean = gnss.hasHeading
+    fun headingDeg(): Double = course.courseDeg
+    fun hasHeading(): Boolean = course.hasCourse
+
+    /** True when the course is a stale held value at a standstill (dim the tape). */
+    fun courseDimmed(): Boolean = course.held
     fun hasFix(): Boolean = haveFix
     fun sunInfo(): SunInfo = sun
 
