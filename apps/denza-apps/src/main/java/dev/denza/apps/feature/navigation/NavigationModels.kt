@@ -1,5 +1,7 @@
 package dev.denza.apps.feature.navigation
 
+import dev.denza.apps.core.FeatureResolution
+
 data class NavigationAppDefinition(
     val packageName: String,
     val fallbackLabel: String,
@@ -38,6 +40,7 @@ data class NavigationSession(
     val virtualDisplayId: Int? = null,
     val message: String = "",
     val details: String? = null,
+    val resolution: FeatureResolution? = null,
 ) {
     val buttonLabel: String
         get() = when (phase) {
@@ -54,6 +57,7 @@ object NavigationRecovery {
                 phase = NavigationPhase.RECOVERING,
                 message = "Безопасно возвращаю навигацию",
                 details = "shell proxy disconnected",
+                resolution = null,
             )
         } else {
             NavigationSession(message = "Соединение восстановится при запуске")

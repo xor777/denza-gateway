@@ -2,6 +2,7 @@ package dev.denza.apps.core
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,9 +39,28 @@ class FeatureModelsTest {
     fun userActionDoesNotResetDesiredState() {
         val starting = FeatureReducer.starting(FeatureId.SIMULCAST)
 
-        val result = FeatureReducer.needsAction(starting, "Нужно действие")
+        val result = FeatureReducer.needsAction(
+            starting,
+            "Выберите приложения для трансляции",
+            resolution = FeatureResolution.SELECT_APPS,
+        )
 
         assertTrue(result.desiredEnabled)
         assertEquals(FeatureStatus.NEEDS_ACTION, result.status)
+        assertEquals(FeatureResolution.SELECT_APPS, result.resolution)
+    }
+
+    @Test
+    fun recoveringClearsAStaleUserResolution() {
+        val needsAction = FeatureReducer.needsAction(
+            FeatureReducer.starting(FeatureId.SIMULCAST),
+            "Подтвердите запрос",
+            resolution = FeatureResolution.CONFIRM_ON_CAR,
+        )
+
+        val result = FeatureReducer.recovering(needsAction, "Восстанавливаю")
+
+        assertEquals(FeatureStatus.RECOVERING, result.status)
+        assertNull(result.resolution)
     }
 }

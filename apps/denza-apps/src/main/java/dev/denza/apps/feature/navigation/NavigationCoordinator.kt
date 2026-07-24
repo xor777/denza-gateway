@@ -5,6 +5,7 @@ import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import dev.denza.apps.core.FeatureResolution
 import dev.denza.apps.feature.cluster.ClusterDisplayResolver
 import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterMapPlacement
@@ -162,7 +163,8 @@ object NavigationCoordinator {
             update(
                 NavigationSession(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = "Установите выбранный навигатор",
+                    message = "Выберите установленный навигатор",
+                    resolution = FeatureResolution.SELECT_NAVIGATION_APP,
                 ),
             )
             return
@@ -171,11 +173,13 @@ object NavigationCoordinator {
             val task = NavigationProxyClient.findAllowedTask(app, packageName)
             update(NavigationSession(taskId = task.takeIf { it >= 0 }))
         } catch (error: Exception) {
+            val problem = friendlyProxyProblem(error)
             update(
                 NavigationSession(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = friendlyProxyError(error),
+                    message = problem.message,
                     details = error.toString(),
+                    resolution = problem.resolution,
                 ),
             )
         }
@@ -191,12 +195,19 @@ object NavigationCoordinator {
             update(
                 NavigationSession(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = "Установите выбранный навигатор",
+                    message = "Выберите установленный навигатор",
+                    resolution = FeatureResolution.SELECT_NAVIGATION_APP,
                 ),
             )
             return
         }
-        update(session.copy(phase = NavigationPhase.OPENING, message = "Открываю на центральном экране"))
+        update(
+            session.copy(
+                phase = NavigationPhase.OPENING,
+                message = "Открываю на центральном экране",
+                resolution = null,
+            ),
+        )
         try {
             launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             val options = ActivityOptions.makeBasic().setLaunchDisplayId(0)
@@ -207,8 +218,9 @@ object NavigationCoordinator {
             update(
                 session.copy(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = "Не удалось открыть навигатор",
+                    message = "Повторите запуск навигатора",
                     details = error.toString(),
+                    resolution = FeatureResolution.RETRY,
                 ),
             )
         }
@@ -245,18 +257,21 @@ object NavigationCoordinator {
                 update(
                     NavigationSession(
                         phase = NavigationPhase.NEEDS_ACTION,
-                        message = "Дождитесь запуска навигатора",
+                        message = "Дождитесь запуска навигатора и повторите",
+                        resolution = FeatureResolution.RETRY,
                     ),
                 )
             }
         } catch (error: Exception) {
             pendingAutomaticProjection = false
             pendingProjectionAfterOpen = false
+            val problem = friendlyProxyProblem(error)
             update(
                 NavigationSession(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = friendlyProxyError(error),
+                    message = problem.message,
                     details = error.toString(),
+                    resolution = problem.resolution,
                 ),
             )
         }
@@ -269,11 +284,13 @@ object NavigationCoordinator {
         val taskId = try {
             NavigationProxyClient.findAllowedTask(app, packageName)
         } catch (error: Exception) {
+            val problem = friendlyProxyProblem(error)
             update(
                 session.copy(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = friendlyProxyError(error),
+                    message = problem.message,
                     details = error.toString(),
+                    resolution = problem.resolution,
                 ),
             )
             return
@@ -287,13 +304,19 @@ object NavigationCoordinator {
         if (session.taskId != taskId) update(session.copy(taskId = taskId))
         val selected = ClusterDisplayResolver.resolve(app)
         if (selected !is ClusterDisplaySelection.Selected) {
+            val needsSelection = selected is ClusterDisplaySelection.NeedsVerification
             update(
                 session.copy(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = if (selected is ClusterDisplaySelection.NeedsVerification) {
-                        "Выберите приборный экран в разделе помощи"
+                    message = if (needsSelection) {
+                        "Выберите приборный экран"
                     } else {
-                        "Приборный экран пока не найден"
+                        "Повторите поиск приборного экрана"
+                    },
+                    resolution = if (needsSelection) {
+                        FeatureResolution.SELECT_CLUSTER_DISPLAY
+                    } else {
+                        FeatureResolution.RETRY
                     },
                 ),
             )
@@ -304,16 +327,24 @@ object NavigationCoordinator {
                 "cmd appops set ${app.packageName} SYSTEM_ALERT_WINDOW allow",
             )
         } catch (error: Exception) {
+            val problem = friendlyProxyProblem(error)
             update(
                 session.copy(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = friendlyProxyError(error),
+                    message = problem.message,
                     details = error.toString(),
+                    resolution = problem.resolution,
                 ),
             )
             return
         }
-        update(session.copy(phase = NavigationPhase.PROJECTING, message = "Переношу на приборку"))
+        update(
+            session.copy(
+                phase = NavigationPhase.PROJECTING,
+                message = "Переношу на приборку",
+                resolution = null,
+            ),
+        )
         val consumed = AtomicBoolean(false)
         ClusterSceneService.showMap(app, selectedPlacement, MapSurfaceConsumer { surface, width, height, density ->
             if (!consumed.compareAndSet(false, true)) return@MapSurfaceConsumer
@@ -361,8 +392,9 @@ object NavigationCoordinator {
                         NavigationSession(
                             phase = NavigationPhase.NEEDS_ACTION,
                             taskId = taskId,
-                            message = "Не удалось перенести навигацию",
+                            message = "Повторите перенос навигации",
                             details = error.toString(),
+                            resolution = FeatureResolution.RETRY,
                         ),
                     )
                 }
@@ -378,7 +410,13 @@ object NavigationCoordinator {
         val app = context ?: return
         val taskId = session.taskId
         val packageName = selectedPackage
-        update(session.copy(phase = NavigationPhase.RETURNING, message = "Возвращаю на главный экран"))
+        update(
+            session.copy(
+                phase = NavigationPhase.RETURNING,
+                message = "Возвращаю на главный экран",
+                resolution = null,
+            ),
+        )
         try {
             if (taskId != null) {
                 NavigationProxyClient.returnTask(
@@ -420,11 +458,13 @@ object NavigationCoordinator {
         val liveTask = try {
             NavigationProxyClient.findAllowedTask(app, packageName)
         } catch (error: Exception) {
+            val problem = friendlyProxyProblem(error)
             update(
                 NavigationSession(
                     phase = NavigationPhase.NEEDS_ACTION,
-                    message = friendlyProxyError(error),
+                    message = problem.message,
                     details = error.toString(),
+                    resolution = problem.resolution,
                 ),
             )
             return
@@ -536,14 +576,34 @@ object NavigationCoordinator {
         onStateChanged?.invoke()
     }
 
-    private fun friendlyProxyError(error: Exception): String {
+    private data class NavigationProblem(
+        val message: String,
+        val resolution: FeatureResolution,
+    )
+
+    private fun friendlyProxyProblem(error: Exception): NavigationProblem {
         val text = error.message.orEmpty()
         return when {
             text.contains("authorization pending", ignoreCase = true) ->
-                "Подтвердите ADB-ключ на экране автомобиля"
-            text.contains("refused", ignoreCase = true) -> "Включите ADB на машине"
-            text.contains("timeout", ignoreCase = true) -> "ADB пока не отвечает"
-            else -> "Навигации нужен доступ к машине"
+                NavigationProblem(
+                    "Подтвердите запрос на экране автомобиля",
+                    FeatureResolution.CONFIRM_ON_CAR,
+                )
+            text.contains("refused", ignoreCase = true) ->
+                NavigationProblem(
+                    "Включите отладку USB в настройках автомобиля",
+                    FeatureResolution.ENABLE_CAR_DEBUGGING,
+                )
+            text.contains("timeout", ignoreCase = true) ->
+                NavigationProblem(
+                    "Система автомобиля не отвечает",
+                    FeatureResolution.RETRY,
+                )
+            else ->
+                NavigationProblem(
+                    "Повторите подключение навигации",
+                    FeatureResolution.RETRY,
+                )
         }
     }
 }

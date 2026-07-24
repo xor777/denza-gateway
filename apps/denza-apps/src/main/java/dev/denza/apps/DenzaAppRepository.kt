@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import dev.denza.apps.core.FeatureId
 import dev.denza.apps.core.FeatureReducer
+import dev.denza.apps.core.FeatureResolution
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
 import dev.denza.apps.feature.cluster.ClusterDisplayResolver
@@ -128,7 +129,12 @@ object DenzaAppRepository {
             selectedApps = selectedApps,
             mirrorsPosition = MirrorsSettings.position(context),
             mirrorsProcessing = MirrorsSettings.processingEnabled(context),
-            navigation = navigationSnapshot(navigationSession.phase, navigationSession.message, navigationSession.details),
+            navigation = navigationSnapshot(
+                navigationSession.phase,
+                navigationSession.message,
+                navigationSession.details,
+                navigationSession.resolution,
+            ),
             navigationButtonLabel = navigationSession.buttonLabel,
             navigationAutomatic = NavigationCoordinator.automaticEnabled(),
             navigationPlacement = NavigationCoordinator.placement(),
@@ -176,9 +182,8 @@ object DenzaAppRepository {
         )
         if (launch == null) {
             mutableState.value = mutableState.value.copy(
-                simulcast = FeatureReducer.needsAction(
-                    FeatureReducer.starting(FeatureId.SIMULCAST),
-                    "Simulcast не найден",
+                simulcast = SimulcastCoordinator.blockedSnapshot(
+                    SimulcastBlocker.DISHARE_UNAVAILABLE,
                 ),
             )
             return
@@ -400,11 +405,13 @@ object DenzaAppRepository {
                 SimulcastAccessibilityService.requestHudGuidanceRefresh()
                 refresh()
             } else {
+                val problem = SimulcastCoordinator.setupProblem(failure)
                 mutableState.value = mutableState.value.copy(
                     hudGuidance = FeatureReducer.needsAction(
                         FeatureReducer.starting(FeatureId.HUD_GUIDANCE),
-                        SimulcastCoordinator.friendlySetupError(failure),
+                        problem.message,
                         failure.toString(),
+                        problem.resolution,
                     ),
                     technicalDetails = supportDiagnostics(context),
                 )
@@ -447,14 +454,18 @@ object DenzaAppRepository {
                 mutableState.value.copy(
                     mirrors = FeatureReducer.needsAction(
                         FeatureReducer.starting(FeatureId.MIRRORS),
-                        "Выберите экран в разделе помощи",
+                        "Выберите приборный экран",
+                        resolution = FeatureResolution.SELECT_CLUSTER_DISPLAY,
                     ),
                     technicalDetails = supportDiagnostics(context),
                 )
             ClusterDisplaySelection.Missing -> mutableState.value = mutableState.value.copy(
-                mirrors = FeatureReducer.needsAction(
-                    FeatureReducer.starting(FeatureId.MIRRORS),
-                    "Приборный экран пока не найден",
+                mirrors = FeatureSnapshot(
+                    id = FeatureId.MIRRORS,
+                    desiredEnabled = true,
+                    status = FeatureStatus.UNAVAILABLE,
+                    message = "Приборный экран не найден",
+                    resolution = FeatureResolution.RETRY,
                 ),
                 technicalDetails = supportDiagnostics(context),
             )
@@ -476,10 +487,7 @@ object DenzaAppRepository {
                 SimulcastReconcileEvent.Refresh -> refresh()
                 is SimulcastReconcileEvent.Blocked -> {
                     mutableState.value = mutableState.value.copy(
-                        simulcast = FeatureReducer.needsAction(
-                            FeatureReducer.starting(FeatureId.SIMULCAST),
-                            event.message,
-                        ),
+                        simulcast = SimulcastCoordinator.blockedSnapshot(event.blocker),
                         selectedAppCount = event.selectedAppCount,
                         technicalDetails = supportDiagnostics(context),
                     )
@@ -499,6 +507,7 @@ object DenzaAppRepository {
                             FeatureReducer.starting(FeatureId.SIMULCAST),
                             event.message,
                             event.details,
+                            event.resolution,
                         ),
                         technicalDetails = supportDiagnostics(context),
                     )
@@ -516,11 +525,15 @@ object DenzaAppRepository {
             )
             is ClusterDisplaySelection.NeedsVerification -> FeatureReducer.needsAction(
                 FeatureReducer.starting(FeatureId.MIRRORS),
-                "Нужно выбрать приборный экран",
+                "Выберите приборный экран",
+                resolution = FeatureResolution.SELECT_CLUSTER_DISPLAY,
             )
-            ClusterDisplaySelection.Missing -> FeatureReducer.recovering(
-                FeatureReducer.starting(FeatureId.MIRRORS),
-                "Ищу приборный экран",
+            ClusterDisplaySelection.Missing -> FeatureSnapshot(
+                id = FeatureId.MIRRORS,
+                desiredEnabled = true,
+                status = FeatureStatus.UNAVAILABLE,
+                message = "Приборный экран не найден",
+                resolution = FeatureResolution.RETRY,
             )
         }
     }
@@ -540,7 +553,8 @@ object DenzaAppRepository {
         if (!SimulcastCoordinator.isAccessibilityEnabled(context)) {
             return FeatureReducer.needsAction(
                 FeatureReducer.starting(FeatureId.HUD_GUIDANCE),
-                "Нужно разрешить доступ",
+                "Повторите настройку доступа",
+                resolution = FeatureResolution.RETRY,
             )
         }
         if (!SimulcastAccessibilityService.isConnected()) {
@@ -559,6 +573,7 @@ object DenzaAppRepository {
         phase: NavigationPhase,
         message: String,
         details: String?,
+        resolution: FeatureResolution?,
     ): FeatureSnapshot {
         val status = when (phase) {
             NavigationPhase.READY -> FeatureStatus.READY
@@ -576,6 +591,7 @@ object DenzaAppRepository {
             status = status,
             message = message,
             details = details,
+            resolution = resolution,
         )
     }
 
