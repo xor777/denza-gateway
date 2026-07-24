@@ -10,6 +10,7 @@ import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterSceneService
 import dev.denza.apps.feature.hud.HudGuidanceRuntime
 import dev.denza.apps.feature.hud.HudGuidanceSettings
+import dev.denza.apps.feature.hud.HudNotificationAccessCoordinator
 import dev.denza.apps.feature.hud.HudNotificationArtworkRuntime
 import dev.denza.apps.feature.mirrors.MirrorSide
 import dev.denza.apps.feature.mirrors.MirrorWindowDiagnostics
@@ -84,6 +85,18 @@ object SupportDiagnostics {
             val split = SplitScreenCoordinator.snapshot()
             add("Split screen=${split.message.ifBlank { split.phase.name.lowercase() }}")
             add("HUD-подсказки=${enabledLabel(HudGuidanceSettings.isEnabled(context))}")
+            val hudNotificationAccess = HudNotificationAccessCoordinator.diagnostics(context)
+            add(
+                "Доступ к уведомлениям HUD=" +
+                    yesNo(hudNotificationAccess.accessEnabled),
+            )
+            add(
+                "Восстановление доступа HUD=" +
+                    hudNotificationAccess.phase.name.lowercase().replace('_', '-'),
+            )
+            hudNotificationAccess.lastFailure?.let {
+                add("Последняя ошибка доступа HUD=$it")
+            }
             val hudArtwork = HudNotificationArtworkRuntime.diagnostics()
             add("Графика HUD из уведомления=${enabledLabel(hudArtwork.flagEnabled)}")
             add("Слушатель уведомлений HUD=${yesNo(hudArtwork.listenerConnected)}")

@@ -1,6 +1,7 @@
 package dev.denza.apps.feature.hud
 
 import android.app.Notification
+import android.content.ComponentName
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -43,6 +44,16 @@ class YandexNotificationArtworkListener : NotificationListenerService() {
     override fun onListenerDisconnected() {
         HudNotificationArtworkRuntime.clear(null, "listener-disconnected")
         HudNotificationArtworkRuntime.setListenerConnected(false)
+        HudNotificationAccessCoordinator.ensureAccess(this) {
+            if (
+                HudGuidanceSettings.isEnabled(this) &&
+                HudNotificationAccessCoordinator.isAccessEnabled(this)
+            ) {
+                requestRebind(
+                    ComponentName(this, YandexNotificationArtworkListener::class.java),
+                )
+            }
+        }
         super.onListenerDisconnected()
     }
 

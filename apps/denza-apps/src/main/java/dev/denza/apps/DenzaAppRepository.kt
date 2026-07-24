@@ -19,6 +19,7 @@ import dev.denza.apps.feature.fse.FseInstallApp
 import dev.denza.apps.feature.fse.FseInstallResult
 import dev.denza.apps.feature.hud.HudGuidanceRuntime
 import dev.denza.apps.feature.hud.HudGuidanceSettings
+import dev.denza.apps.feature.hud.HudNotificationAccessCoordinator
 import dev.denza.apps.feature.mirrors.MirrorDisplayReadiness
 import dev.denza.apps.feature.mirrors.MirrorsPosition
 import dev.denza.apps.feature.mirrors.MirrorsSettings
@@ -102,6 +103,7 @@ object DenzaAppRepository {
         reconcileSimulcast(repairMissingSetup = true)
         if (MirrorsSettings.isEnabled(context)) reconcileMirrors()
         NavigationCoordinator.initialize(context) { refresh() }
+        reconcileHudNotificationAccess(context)
     }
 
     fun recoverEnabledFeatures(context: Context) {
@@ -114,6 +116,7 @@ object DenzaAppRepository {
         if (MirrorsSettings.isEnabled(context)) {
             reconcileMirrors()
         }
+        reconcileHudNotificationAccess(context)
     }
 
     fun refresh() {
@@ -402,6 +405,7 @@ object DenzaAppRepository {
             refresh()
             return
         }
+        HudNotificationAccessCoordinator.ensureAccess(context) { refresh() }
         mutableState.value = mutableState.value.copy(
             hudGuidance = FeatureReducer.starting(FeatureId.HUD_GUIDANCE),
         )
@@ -473,6 +477,11 @@ object DenzaAppRepository {
                 technicalDetails = supportDiagnostics(context),
             )
         }
+    }
+
+    private fun reconcileHudNotificationAccess(context: Context) {
+        if (!HudGuidanceSettings.isEnabled(context)) return
+        HudNotificationAccessCoordinator.ensureAccess(context) { refresh() }
     }
 
     private fun reconcileSimulcast(

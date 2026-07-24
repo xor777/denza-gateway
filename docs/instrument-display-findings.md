@@ -150,6 +150,17 @@ field 8. Accessibility remains authoritative for the maneuver, distance, road,
 and route summary. Missing notification access, an incompatible layout, stale
 artwork, or the internal kill switch all fall back silently to the existing
 Canvas renderer; none of those conditions makes the HUD card require action.
+When HUD guidance is enabled, Denza Apps checks the listener grant and restores
+it through the existing local ADB channel:
+
+```shell
+cmd notification allow_listener \
+  dev.denza.apps/dev.denza.apps.feature.hud.YandexNotificationArtworkListener
+```
+
+The same idempotent repair runs after boot, APK replacement, app startup, and a
+listener disconnect. A failed repair remains diagnostic-only and does not stop
+guidance or replace the Canvas fallback.
 The notification artwork path is locally tested and built but still needs
 live-car verification against the current Yandex notification layout.
 
