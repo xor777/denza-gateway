@@ -22,6 +22,10 @@ lives in
   - `com.byd.sr/.cluster.ClusterActivity` rendering on the dashboard
 - The SR/camera-window monitor remains the working product trigger. These
   app-level listeners produced no usable turn-signal callbacks.
+- 2026-07-24 logcat capture falsified `28600009` as a stalk-edge trigger: it is
+  a continuous broadcast (~25–45 events/s, value toggling 0/1) that keeps
+  firing while parked with both turn signals off. A wider capture of all
+  `postEvent` device types around a signal flip has not been analyzed yet.
 
 ## If Research Resumes
 

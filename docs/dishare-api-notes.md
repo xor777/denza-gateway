@@ -528,6 +528,33 @@ live-car close check. It deliberately does not queue the opposite side:
 automatically opening it without a confirmed neutral interval would re-enter
 the known AVC crash path.
 
+### Live re-test with quarantine build 0.4.3 (2026-07-24 evening)
+
+Two more live sessions settled what the quarantine can and cannot do.
+
+- Direct left→right still crashes stock `com.byd.avc` even with the quarantine
+  active: 19:39:40 `SIGABRT` in `libvc_sdk_ui` (stock main thread stopped
+  answering `pause` ~95 ms after the right alert window appeared), and
+  19:53:43.988 `SIGSEGV` (`SEGV_MAPERR`, fault addr `0x90`) on the stock main
+  thread 174 ms after the right alert window appeared. The 19:19 crash stack
+  runs through stock `PIPLeftMode.handleMessage`. The crash is armed by our
+  successful `initDisplay()` and fired by the stock's own mode transition;
+  no app-side gating that reacts to window appearance can fire early enough.
+- The quarantine still does its narrower job: after each crash the reducer
+  recovered to `ready` through the neutral gate on its own, and the isolated
+  open/close cycles are clean — measured overlay reactions on 0.4.3 were
+  164 ms (left open), 111 ms (left close), 452 ms (right open), 119 ms
+  (right close) behind the stock window, via `dumpsys` polling.
+- During the 19:39 wedge our teardown lagged ~5 s; mirror-path logcat logging
+  (`DenzaMirrorMonitor`, scene `showCamera`/`hideCamera` marks) was added to
+  attribute such delays.
+- Timing budget for any future fast-switch fix: right-window-add to stock
+  main-thread danger is ~95–174 ms. `dumpsys` polling detects at 110–600 ms
+  (too late). An accessibility `TYPE_WINDOWS_CHANGED` push (~10–20 ms) plus an
+  emergency surface release could fit inside the budget, but the safe teardown
+  order (window removal before `freeDisplay`) needs at least one frame; this
+  path is unproven and needs a dedicated probe before any product change.
+
 ### Stock-owned non-AIDL candidate (2026-07-18)
 
 The stock cluster projection Binder resolves the real calling package and
