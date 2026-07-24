@@ -21,6 +21,7 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
@@ -30,6 +31,8 @@ import android.view.accessibility.AccessibilityWindowInfo;
 
 import dev.denza.disharebridge.DiShareScreens;
 import dev.denza.apps.feature.hud.HudGuidanceAccessibilityMonitor;
+import dev.denza.apps.feature.navigation.NavigationSettings;
+import dev.denza.apps.feature.navigation.SteeringWheelNavigationButton;
 import dev.denza.apps.feature.simulcast.SimulcastVideoSizeResolver;
 
 import java.util.ArrayList;
@@ -160,6 +163,23 @@ public class SimulcastAccessibilityService extends AccessibilityService {
             return;
         }
         scheduleRefresh();
+    }
+
+    @Override
+    protected boolean onKeyEvent(KeyEvent event) {
+        boolean enabled = NavigationSettings.INSTANCE.steeringWheelButtonEnabled(this);
+        if (!SteeringWheelNavigationButton.shouldConsume(enabled, event.getKeyCode())) {
+            return false;
+        }
+        if (SteeringWheelNavigationButton.shouldTrigger(
+                enabled,
+                event.getKeyCode(),
+                event.getAction(),
+                event.getRepeatCount())) {
+            Log.i(TAG, "steering-wheel navigation action");
+            DenzaAppRepository.INSTANCE.performNavigationActionFromSteeringWheel(this);
+        }
+        return true;
     }
 
     @Override

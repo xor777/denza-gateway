@@ -65,6 +65,7 @@ data class DenzaUiState(
     ),
     val navigationButtonLabel: String = "Открыть",
     val navigationAutomatic: Boolean = false,
+    val navigationSteeringWheelButton: Boolean = false,
     val navigationPlacement: ClusterMapPlacement = ClusterMapPlacement.FULL,
     val navigationAppLabel: String = "Яндекс Навигатор",
     val navigationAppChoices: List<NavigationAppChoice> = emptyList(),
@@ -138,6 +139,7 @@ object DenzaAppRepository {
             ),
             navigationButtonLabel = navigationSession.buttonLabel,
             navigationAutomatic = NavigationCoordinator.automaticEnabled(),
+            navigationSteeringWheelButton = NavigationSettings.steeringWheelButtonEnabled(context),
             navigationPlacement = NavigationCoordinator.placement(),
             navigationAppLabel = NavigationAppPolicy.fallbackLabel(navigationPackage),
             navigationAppChoices = navigationAppChoices(context, navigationPackage),
@@ -346,8 +348,21 @@ object DenzaAppRepository {
         NavigationCoordinator.performPrimaryAction()
     }
 
+    fun performNavigationActionFromSteeringWheel(context: Context) {
+        if (appContext == null) {
+            initialize(context.applicationContext)
+        }
+        NavigationCoordinator.performPrimaryAction()
+    }
+
     fun setNavigationAutomatic(enabled: Boolean) {
         NavigationCoordinator.setAutomaticEnabled(enabled)
+    }
+
+    fun setNavigationSteeringWheelButton(enabled: Boolean) {
+        val context = appContext ?: return
+        NavigationSettings.setSteeringWheelButtonEnabled(context, enabled)
+        refresh()
     }
 
     fun setNavigationPlacement(placement: ClusterMapPlacement) {

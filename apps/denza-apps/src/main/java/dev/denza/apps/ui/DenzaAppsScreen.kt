@@ -107,6 +107,7 @@ fun DenzaAppsRoot(
     onPreviewMirrors: () -> Unit,
     onNavigationAction: () -> Unit,
     onNavigationAutomatic: (Boolean) -> Unit,
+    onNavigationSteeringWheelButton: (Boolean) -> Unit,
     onNavigationPlacement: (ClusterMapPlacement) -> Unit,
     onChooseNavigationApp: () -> Unit,
     onCloseNavigationPicker: () -> Unit,
@@ -200,6 +201,32 @@ fun DenzaAppsRoot(
                                             uiState.navigation.status != FeatureStatus.RECOVERING,
                                     )
                                 }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column {
+                                    Text(
+                                        "Кнопка на руле",
+                                        color = Ink,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                    Text(
+                                        "Отправить / вернуть навигацию",
+                                        color = Muted,
+                                        fontSize = 11.sp,
+                                    )
+                                }
+                                Spacer(Modifier.weight(1f))
+                                Switch(
+                                    checked = uiState.navigationSteeringWheelButton,
+                                    onCheckedChange = onNavigationSteeringWheelButton,
+                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                        uiState.navigation.status != FeatureStatus.RECOVERING,
+                                )
                             }
                             Spacer(Modifier.height(10.dp))
                             Row(

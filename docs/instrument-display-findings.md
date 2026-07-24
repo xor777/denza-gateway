@@ -1,7 +1,7 @@
 # Instrument Display Findings
 
 This page tracks the instrument-display scene shared by Mirrors and navigation.
-The implementation summary was last checked against the code on 2026-07-20.
+The implementation summary was last checked against the code on 2026-07-24.
 
 ## Product architecture
 
@@ -91,6 +91,33 @@ opened, and the selected package is checked again before an automatic launch.
 The selected package is saved. Projection sessions stay in memory and end with
 the process. The automatic **Map mode** implementation also remains in code,
 but its unfinished UI switch is hidden in the current build.
+
+The optional **Steering-wheel button** switch binds the Denza configurable
+left-hand key to the same contextual navigation action. It is off by default.
+On the tested DiLink 5.1 firmware, host-side
+`adb shell getevent -lt /dev/input/event0` identifies the device as
+`simulate-keys`: Linux input code `300` (`AUTO_CUSTOM_KEY`) maps through
+`/system/usr/keylayout/simulate-keys.kl` to vendor Android key code `321`.
+Code `301` (`AUTO_CUSTOM_KEY_LP`) maps separately to Android key code `322` for
+the stock long-press settings flow.
+
+The existing Denza Apps accessibility service requests key-event filtering.
+When the switch is enabled it consumes both phases of key code `321`, invokes
+the navigation action only on the first non-repeated `DOWN`, and leaves key
+code `322` and every unrelated key untouched. When disabled, it does not
+consume `321`, so the stock action continues normally. Denza Apps does not
+rewrite the global `byd_map_package` setting. That stock alternative was
+observed but rejected: `CustomKeyHandler` action `7` reads
+`byd_map_package=com.byd.launchermap` and sends the package-scoped
+`CUSTOM_NAVI_STANDARD_BROADCAST_RECV` broadcast.
+
+On 2026-07-24, a non-consuming probe received key code `321` before
+`CustomKeyHandler` and still allowed the stock map to open. A consuming probe
+prevented the stock handler from running. With the product switch enabled, the
+wheel key moved Yandex Navigator task `131` to Denza Apps virtual display `13`
+at `2560x720`; the next press returned it to display `0` and removed display
+`13`. The user confirmed both directions worked correctly. These task and
+display IDs belong only to that run.
 
 When the hidden automatic mode is enabled in a development build, Denza Apps
 checks the selected instrument display once per second. A visible exact

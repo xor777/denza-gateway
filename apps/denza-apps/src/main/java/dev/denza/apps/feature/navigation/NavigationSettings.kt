@@ -8,6 +8,7 @@ object NavigationSettings {
     private const val PREFS = "denza_navigation"
     private const val SELECTED_PACKAGE = "selected_package"
     private const val MAP_PLACEMENT = "map_placement"
+    private const val STEERING_WHEEL_BUTTON = "steering_wheel_button"
 
     fun selectedPackage(context: Context): String {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -42,6 +43,18 @@ object NavigationSettings {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(MAP_PLACEMENT, placement.name)
+            .apply()
+    }
+
+    fun steeringWheelButtonEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(STEERING_WHEEL_BUTTON, false)
+
+    @SuppressLint("UseKtx")
+    fun setSteeringWheelButtonEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(STEERING_WHEEL_BUTTON, enabled)
             .apply()
     }
 
