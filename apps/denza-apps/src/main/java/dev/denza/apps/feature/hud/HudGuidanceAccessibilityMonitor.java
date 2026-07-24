@@ -82,7 +82,7 @@ public final class HudGuidanceAccessibilityMonitor {
                 lastPublishedMs = now;
             }
             cleared = false;
-            HudGuidanceRuntime.onGuidance(guidance);
+            HudGuidanceRuntime.onGuidance(guidance, now);
         } else if (!cleared && now - lastSeenMs >= LOST_ROUTE_GRACE_MS) {
             someIpClient.clear();
             cleared = true;

@@ -192,16 +192,33 @@ object YandexGuidanceParser {
     )
 }
 
+/** Fail-closed remaining-route figures handed to the trip panel. */
+data class HudRemainingGuidance(val distanceMeters: Int?, val timeSeconds: Int?)
+
 object HudGuidanceRuntime {
+    private const val REMAINING_STALE_MS = 4_000L
+
     @Volatile
     private var active = false
 
     @Volatile
     private var details = "Ожидаю маршрут Яндекса"
 
+    @Volatile
+    private var remainingDistanceMeters = -1
+
+    @Volatile
+    private var remainingTimeSeconds = -1
+
+    @Volatile
+    private var updatedAtMs = 0L
+
     @JvmStatic
-    fun onGuidance(guidance: HudGuidance) {
+    fun onGuidance(guidance: HudGuidance, capturedAtMs: Long) {
         active = true
+        remainingDistanceMeters = guidance.remainingDistanceMeters ?: -1
+        remainingTimeSeconds = guidance.remainingTimeSeconds ?: -1
+        updatedAtMs = capturedAtMs
         details = buildList {
             add(guidance.nextRoadName.ifEmpty { guidance.instruction })
             add("${guidance.maneuverDistanceMeters} м")
@@ -213,12 +230,14 @@ object HudGuidanceRuntime {
     @JvmStatic
     fun onWaiting() {
         active = false
+        clearRemaining()
         details = "Ожидаю маршрут Яндекса"
     }
 
     @JvmStatic
     fun onStopped() {
         active = false
+        clearRemaining()
         details = "Выключено"
     }
 
@@ -227,4 +246,32 @@ object HudGuidanceRuntime {
 
     @JvmStatic
     fun details(): String = details
+
+    /**
+     * Remaining distance/time from the validated Yandex guidance, or null when
+     * guidance is absent or stale. Respects the HUD feature's own fail-closed
+     * rules (the accessibility monitor clears on a lost route); this adds a hard
+     * staleness guard so the panel never shows an invented or frozen figure.
+     * [nowMs] must be on the same clock the monitor publishes with
+     * (SystemClock.uptimeMillis()).
+     */
+    @JvmStatic
+    fun remaining(nowMs: Long): HudRemainingGuidance? {
+        if (!active) return null
+        val at = updatedAtMs
+        if (at == 0L || nowMs < at || nowMs - at > REMAINING_STALE_MS) return null
+        val dist = remainingDistanceMeters
+        val time = remainingTimeSeconds
+        if (dist < 0 && time < 0) return null
+        return HudRemainingGuidance(
+            distanceMeters = if (dist >= 0) dist else null,
+            timeSeconds = if (time >= 0) time else null,
+        )
+    }
+
+    private fun clearRemaining() {
+        remainingDistanceMeters = -1
+        remainingTimeSeconds = -1
+        updatedAtMs = 0L
+    }
 }
