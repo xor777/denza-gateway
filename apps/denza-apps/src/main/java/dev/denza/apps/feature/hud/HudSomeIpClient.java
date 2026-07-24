@@ -14,6 +14,7 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.Parcel;
 import android.os.RemoteException;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.ByteArrayOutputStream;
@@ -152,11 +153,17 @@ final class HudSomeIpClient {
     }
 
     private void fireGuidance(HudGuidance guidance) {
-        String iconKey = guidance.getManeuver().name() + ":" + guidance.getRoundaboutExitNumber();
-        byte[] icon = iconCache.get(iconKey);
+        byte[] icon = HudNotificationArtworkRuntime.resolve(
+                guidance,
+                SystemClock.uptimeMillis());
         if (icon == null) {
-            icon = renderIcon(guidance.getManeuver(), guidance.getRoundaboutExitNumber());
-            iconCache.put(iconKey, icon);
+            String iconKey = guidance.getManeuver().name()
+                    + ":" + guidance.getRoundaboutExitNumber();
+            icon = iconCache.get(iconKey);
+            if (icon == null) {
+                icon = renderIcon(guidance.getManeuver(), guidance.getRoundaboutExitNumber());
+                iconCache.put(iconKey, icon);
+            }
         }
         int result = fire(TOPIC_HUD_ROAD, buildPayload(false, guidance, ++counter, icon));
         if (result == 0) {
