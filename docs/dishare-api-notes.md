@@ -581,6 +581,39 @@ every `showCamera` on this firmware and always falls back to the normal
 camera window. Functional, but the overlay attempt is dead code here and
 logs a full stack per activation.
 
+### Fast-switch guard implementation (2026-07-24, untested on the car)
+
+Built on the probe numbers above, in three gated pieces:
+
+- `ClusterSceneService.emergencyReleaseCamera()` frees the vendor display
+  synchronously in one main-loop turn using the original verified
+  window-before-`freeDisplay` order; the released runtime snapshot carries an
+  `emergency` mark.
+- `MirrorGuardAccessibilityService` (separate component, window-state events
+  only, `notificationTimeout=0`) triggers that release when a `com.byd.avc`
+  window changes while our session is `STARTING`/`READY`. The Simulcast
+  service keeps its 100 ms batching. Kill switch without reinstall: remove
+  the guard component from `enabled_accessibility_services`; the repair flow
+  enables both owned services.
+- `MirrorTransitionReducer` gives emergency-released sessions their own
+  quarantine kind: after six consecutive stable polls of the newly requested
+  stock window (~2–3 s) it starts that side from the queue. Second flip,
+  ambiguous windows, or any non-emergency quarantine fall back to the
+  confirmed-neutral wait. Everything is gated by the `fast_switch_guard`
+  mirrors setting (default on).
+
+Trial protocol (agreed before implementation): baseline isolated cycles must
+stay clean, then at most six deliberate fast left-to-right attempts with
+`logcat -b crash` streaming and the FSM/guard logs captured, including at
+least one run under driving load, since all probe numbers came from a parked
+car. Kill criterion: stock `com.byd.avc` crashes in more than half of the
+fast-switch attempts, or any new crash appears in isolated cycles — then the
+guard commits are reverted and this section gets the closing numbers.
+Expected win: a fast flip ends with the stock process alive and the right
+mirror appearing from the queue ~2–3 s later. Losing the race keeps today's
+behavior (stock crash + quarantine recovery), so the trial cannot regress
+the baseline.
+
 ### Stock-owned non-AIDL candidate (2026-07-18)
 
 The stock cluster projection Binder resolves the real calling package and
