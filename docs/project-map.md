@@ -124,8 +124,9 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 | Compose app picker | Six-column grid of installed apps; tap to choose up to six for casting. Defaults to the installed subset of VK Video / Rutube / Kinopoisk / Yandex Navigator / VLC / YouTube. |
 | `SimulcastApps` | Persists the chosen casting packages (prefs) and seeds defaults. |
 | `SimulcastAccessibilityService`, `ScreenTarget` | Active visual path. Draws the selected app row and only accepts drop zones present in both the accessibility tree and runtime-available `DiShareScreens`; includes HUD, FSE, left/right RSE, overhead, and the single-rear `screen_tv` alias while keeping IVI as source. |
+| `SimulcastVideoSizeResolver` | Matches a DiShare receiver to the physical Android display by name tokens and copies that display's aspect into the share video size (2560-long side, encoder-aligned) so the receiver does not letterbox. Unmatched, ambiguous, or out-of-range cases fall back to the proven `2560x1440`; the chosen size and match reason are logged and shown in the hidden diagnostics. Aspect-matched sizes on rear screens are not yet live-car verified. |
 | `SimulcastDialogGeometry` | Reads live row and receiver geometry from the dialog's accessibility tree instead of assuming fixed HUD/FSE rectangles. |
-| `SimulcastOverlayService` | Casting controller: launches the target through `dishare-bridge` at `2560x1440`, stops it, and shows the floating native exit control over the casting app. No longer draws the dialog overlay. |
+| `SimulcastOverlayService` | Casting controller: launches the target through `dishare-bridge` with the video size chosen by `SimulcastVideoSizeResolver`, stops it, and shows the floating native exit control over the casting app. No longer draws the dialog overlay. |
 | `SimulcastBootReceiver` | Forwards DiShare dialog actions and invokes runtime recovery after boot or APK replacement. |
 | `feature.cluster` | Fail-closed cluster display resolver, real-display geometry, and the shared map-base/camera-overlay scene. No fallback display IDs. |
 | `feature.hud` | Optional Yandex turn-by-turn bridge. Reads validated visible guidance across all accessibility displays and publishes maneuver, next-road, remaining route distance/time, and optional road text to the stock HUD SOME/IP road topic; unknown or stale guidance fails closed and clears the projection. |
@@ -138,7 +139,7 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 
 | Component | Status |
 | --- | --- |
-| `DiShareProjectionBridge` | Active raw binder wrapper for DiShare API/control services. Casts are launched at `2560x1440` so the app renders at native resolution (not the old `1024x576`). |
+| `DiShareProjectionBridge` | Active raw binder wrapper for DiShare API/control services. Callers pass the share video size per cast (Denza Apps derives it from the receiver's display aspect, defaulting to `2560x1440`); dimensions outside `180..4096` degrade to the legacy `1024x576` path. |
 | `DiShareScreens` | Screen-discovery wrapper for `getScreens` (available receivers). |
 | `LocalAdbClient`, `AdbKeyStore` | Shared `adbd` shell client for app-side provisioning commands after the user authorizes the generated ADB key. Tries loopback first, then local non-loopback IPv4 addresses because some firmwares expose ADB on WLAN but not `127.0.0.1`. |
 

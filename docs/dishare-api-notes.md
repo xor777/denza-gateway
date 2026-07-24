@@ -409,6 +409,33 @@ return to Denza Apps diagnostics. This distinguishes a receiver omitted by
 DiShare from a missing stock card or an Android-only rear display without
 guessing a target id.
 
+### Share video size vs receiver aspect (2026-07-24)
+
+A rear-screen user report showed a black bar at the bottom of the receiver
+during casting. Working hypothesis: the fixed `2560x1440` (16:9) share size is
+letterboxed by the receiver when its panel is not 16:9 (the IVI panel itself is
+`2560x1600`, 16:10, so 16:10 rear panels are plausible). Denza Apps now picks
+the share size per cast with `SimulcastVideoSizeResolver`: it matches the
+receiver to an Android `Display` by name tokens (`fse`, `rse`, `rear`,
+`overhead`, `tv`, plus `left`/`right`), copies that display's aspect onto a
+2560-long side, and falls back to the proven `2560x1440` when the display is
+missing, ambiguous, or produces a dimension outside the bridge's `180..4096`
+range. The chosen size and the match reason appear in the cast logcat line and
+in the hidden diagnostics (`Последний запуск <receiver>=...`). Not yet live-car
+verified: whether DiShare accepts non-16:9 sizes on rear receivers, and whether
+rear panels are present in the public display list at cast time.
+
+Known risk from the 2026-06 "small on main" investigation: decompiled DiShare
+clamps the mirror aspect to at least 16:9 (`max(1.7777, w/h)`), and a live
+request of `2560x1600` produced a `2560x1440` `BYD-Mirror`. If that clamp also
+applies on this firmware to rear-receiver casts, a 16:10 share request will be
+coerced back to 16:9 and the bottom bar will remain; in that case the letterbox
+is firmware-forced and the remaining routes are receiver-side
+(`TX_SET_VIDEO_BOUNDS` semantics) or research-lane experiments. The live check
+is: start a rear cast, then compare the requested size from the
+`Последний запуск` diagnostics line against the `BYD-Mirror` size in
+`dumpsys display`.
+
 ## HUD camera streaming findings
 
 Working:

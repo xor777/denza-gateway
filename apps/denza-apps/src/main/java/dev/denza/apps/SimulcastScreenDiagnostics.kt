@@ -3,6 +3,7 @@ package dev.denza.apps
 import android.content.Context
 import android.graphics.Rect
 import dev.denza.apps.feature.simulcast.ScreenTarget
+import dev.denza.apps.feature.simulcast.SimulcastVideoSizeResolver
 import dev.denza.disharebridge.DiShareScreens
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -40,6 +41,12 @@ object SimulcastScreenDiagnostics {
 
     @Volatile
     private var layoutUpdatedAtMs = 0L
+
+    @Volatile
+    private var castStatus: String? = null
+
+    @Volatile
+    private var castUpdatedAtMs = 0L
 
     fun refresh(context: Context, onChanged: () -> Unit) {
         if (!queryRunning.compareAndSet(false, true)) return
@@ -104,6 +111,18 @@ object SimulcastScreenDiagnostics {
         layoutUpdatedAtMs = System.currentTimeMillis()
     }
 
+    @JvmStatic
+    fun recordCastVideoSize(
+        receiverId: String,
+        resolution: SimulcastVideoSizeResolver.Resolution,
+    ) {
+        castStatus = "Последний запуск $receiverId=" +
+            "video=${resolution.videoWidth}×${resolution.videoHeight}; " +
+            "экран=${if (resolution.matched) "найден" else "не найден"}; " +
+            resolution.details
+        castUpdatedAtMs = System.currentTimeMillis()
+    }
+
     fun diagnosticLines(nowMs: Long = System.currentTimeMillis()): List<String> = buildList {
         add("DiShare getScreens=$queryStatus${ageSuffix(screenUpdatedAtMs, nowMs)}")
         if (screenRecords.isEmpty() && screenUpdatedAtMs > 0L && !queryStatus.startsWith("ошибка")) {
@@ -120,6 +139,7 @@ object SimulcastScreenDiagnostics {
         }
         add("Узлы Simulcast=$layoutStatus${ageSuffix(layoutUpdatedAtMs, nowMs)}")
         addAll(targetLines)
+        castStatus?.let { add(it + ageSuffix(castUpdatedAtMs, nowMs)) }
     }
 
     private fun Rect.diagnosticString(): String = "[$left,$top][$right,$bottom]"

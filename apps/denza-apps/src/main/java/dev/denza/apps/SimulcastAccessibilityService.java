@@ -30,6 +30,7 @@ import android.view.accessibility.AccessibilityWindowInfo;
 
 import dev.denza.disharebridge.DiShareScreens;
 import dev.denza.apps.feature.hud.HudGuidanceAccessibilityMonitor;
+import dev.denza.apps.feature.simulcast.SimulcastVideoSizeResolver;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -61,10 +62,6 @@ import java.util.Set;
 public class SimulcastAccessibilityService extends AccessibilityService {
     private static final String TAG = "DenzaSimulcastA11y";
     private static final String DISHARE_PKG = "com.byd.dishare";
-
-    /** Source size so the app renders at native resolution, not 1024x576. */
-    private static final int SHARE_VIDEO_WIDTH = 2560;
-    private static final int SHARE_VIDEO_HEIGHT = 1440;
 
     // Native row colours from decompiled DiShare (night theme). We keep the native
     // hue but make our replacement panel opaque so stock app icons never bleed through.
@@ -878,9 +875,14 @@ public class SimulcastAccessibilityService extends AccessibilityService {
     }
 
     private void launch(Target target, String receiver) {
-        Log.i(TAG, "cast " + target.packageName + " -> " + receiver);
+        SimulcastVideoSizeResolver.Resolution videoSize =
+                SimulcastVideoSizeResolver.resolve(this, receiver);
+        Log.i(TAG, "cast " + target.packageName + " -> " + receiver
+                + " video=" + videoSize.getVideoWidth() + "x" + videoSize.getVideoHeight()
+                + " (" + videoSize.getDetails() + ")");
+        SimulcastScreenDiagnostics.recordCastVideoSize(receiver, videoSize);
         SimulcastOverlayService.startTarget(this, target.packageName, receiver,
-                SHARE_VIDEO_WIDTH, SHARE_VIDEO_HEIGHT);
+                videoSize.getVideoWidth(), videoSize.getVideoHeight());
     }
 
     private Target targetFor(String packageName) {
