@@ -119,7 +119,7 @@ Research package `dev.denza.mirrors.probe` (not product; promote before relying)
 
 | Component | Status |
 | --- | --- |
-| `MainActivity`, `ui/DenzaAppsScreen` | Landscape-first Compose shell with three main cards (Navigation, Simulcast, Mirrors) and three compact cards (Split screen, HUD hints, passenger-screen installation). The Navigation card includes an opt-in steering-wheel projection toggle. Attention states show a concrete instruction and reuse existing action slots; technical diagnostics remain hidden in Help. |
+| `MainActivity`, `ui/DenzaAppsScreen` | Landscape-first Compose shell with three main cards (Navigation, Simulcast, Mirrors) and three compact cards (Split screen, HUD hints, passenger-screen installation). Main-card settings use standard Material 3 switches, segmented selectors, and action buttons; selected Simulcast apps stay in one compact horizontal summary. The Navigation card includes an opt-in steering-wheel projection toggle. Attention states show a concrete instruction and reuse existing action slots; technical diagnostics remain hidden in Help. |
 | `DenzaAppRepository`, `core/FeatureModels`, `DenzaRuntimeCoordinator` | Separate desired/observed feature state, short user-facing status, boot/package-update recovery, and detailed Help diagnostics. The hidden diagnostic view captures raw DiShare receivers, stock Simulcast receiver-card bounds, their usable intersection, and every Android display for N9 rear-screen investigation. |
 | Compose app picker | Six-column grid of installed apps; tap to choose up to six for casting. Defaults to the installed subset of VK Video / Rutube / Kinopoisk / Yandex Navigator / VLC / YouTube. |
 | `SimulcastApps` | Persists the chosen casting packages (prefs) and seeds defaults. |

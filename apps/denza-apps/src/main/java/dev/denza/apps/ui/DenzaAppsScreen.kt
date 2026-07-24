@@ -42,8 +42,13 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.Image
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -65,6 +70,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -163,71 +169,45 @@ fun DenzaAppsRoot(
                         snapshot = uiState.navigation,
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
+                            StandardSegmentedChoiceRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                ClusterMapPlacement.entries.forEach { placement ->
-                                    NavigationPlacementChoice(
-                                        modifier = Modifier.weight(1f),
-                                        text = when (placement) {
-                                            ClusterMapPlacement.FULL -> "Полный"
-                                            ClusterMapPlacement.LEFT -> "Слева"
-                                            ClusterMapPlacement.CENTER -> "Центр"
-                                            ClusterMapPlacement.RIGHT -> "Справа"
-                                        },
-                                        selected = uiState.navigationPlacement == placement,
-                                        enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                            uiState.navigation.status != FeatureStatus.RECOVERING,
-                                        onClick = { onNavigationPlacement(placement) },
-                                    )
-                                }
-                            }
+                                labels = ClusterMapPlacement.entries.map { placement ->
+                                    when (placement) {
+                                        ClusterMapPlacement.FULL -> "Полный"
+                                        ClusterMapPlacement.LEFT -> "Слева"
+                                        ClusterMapPlacement.CENTER -> "Центр"
+                                        ClusterMapPlacement.RIGHT -> "Справа"
+                                    }
+                                },
+                                selectedIndex = ClusterMapPlacement.entries.indexOf(
+                                    uiState.navigationPlacement,
+                                ),
+                                enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                    uiState.navigation.status != FeatureStatus.RECOVERING,
+                                onSelect = { index ->
+                                    onNavigationPlacement(ClusterMapPlacement.entries[index])
+                                },
+                            )
                             if (SHOW_NAVIGATION_AUTOMATIC) {
                                 Spacer(Modifier.height(10.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column {
-                                        Text("Авто", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-                                        Text("По режиму приборки", color = Muted, fontSize = 11.sp)
-                                    }
-                                    Spacer(Modifier.weight(1f))
-                                    Switch(
-                                        checked = uiState.navigationAutomatic,
-                                        onCheckedChange = onNavigationAutomatic,
-                                        enabled = uiState.navigation.status != FeatureStatus.STARTING &&
-                                            uiState.navigation.status != FeatureStatus.RECOVERING,
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column {
-                                    Text(
-                                        "Кнопка на руле",
-                                        color = Ink,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                    Text(
-                                        "Отправить / вернуть навигацию",
-                                        color = Muted,
-                                        fontSize = 11.sp,
-                                    )
-                                }
-                                Spacer(Modifier.weight(1f))
-                                Switch(
-                                    checked = uiState.navigationSteeringWheelButton,
-                                    onCheckedChange = onNavigationSteeringWheelButton,
-                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                SettingsSwitchRow(
+                                    title = "Авто",
+                                    subtitle = "По режиму приборки",
+                                    checked = uiState.navigationAutomatic,
+                                    onCheckedChange = onNavigationAutomatic,
+                                    controlEnabled = uiState.navigation.status != FeatureStatus.STARTING &&
                                         uiState.navigation.status != FeatureStatus.RECOVERING,
                                 )
                             }
+                            Spacer(Modifier.height(10.dp))
+                            SettingsSwitchRow(
+                                title = "Кнопка ★ на руле",
+                                subtitle = "Отправить / вернуть навигацию",
+                                checked = uiState.navigationSteeringWheelButton,
+                                onCheckedChange = onNavigationSteeringWheelButton,
+                                controlEnabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                    uiState.navigation.status != FeatureStatus.RECOVERING,
+                            )
                             Spacer(Modifier.height(10.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -265,7 +245,7 @@ fun DenzaAppsRoot(
                         modifier = Modifier.weight(1f),
                         icon = Icons.Outlined.Apps,
                         title = "Трансляция",
-                        subtitle = "Выбрано: ${uiState.selectedAppCount}",
+                        subtitle = "Приложения на экранах",
                         snapshot = uiState.simulcast,
                         switchValue = uiState.simulcast.desiredEnabled,
                         onSwitch = onToggleSimulcast,
@@ -322,62 +302,29 @@ fun DenzaAppsRoot(
                         onSwitch = onToggleMirrors,
                     ) {
                         Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
+                            StandardSegmentedChoiceRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                MirrorChoice(
-                                    modifier = Modifier.weight(1f),
-                                    text = "По сторонам",
-                                    selected = uiState.mirrorsPosition == MirrorsPosition.SIDES,
-                                    featureEnabled = uiState.mirrors.desiredEnabled,
-                                    onClick = { onMirrorsPosition(MirrorsPosition.SIDES) },
-                                )
-                                MirrorChoice(
-                                    modifier = Modifier.weight(1f),
-                                    text = "По центру",
-                                    selected = uiState.mirrorsPosition == MirrorsPosition.CENTER,
-                                    featureEnabled = uiState.mirrors.desiredEnabled,
-                                    onClick = { onMirrorsPosition(MirrorsPosition.CENTER) },
-                                )
-                            }
-                            Spacer(Modifier.height(10.dp))
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                color = if (uiState.mirrors.desiredEnabled) Elevated else DisabledElevated,
-                                shape = RoundedCornerShape(14.dp),
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Column {
-                                        Text(
-                                            "Улучшение изображения",
-                                            color = if (uiState.mirrors.desiredEnabled) Ink else DisabledInk,
-                                            fontSize = 13.sp,
-                                        )
-                                        Text(
-                                            "Ярче и контрастнее",
-                                            color = if (uiState.mirrors.desiredEnabled) Muted else DisabledMuted,
-                                            fontSize = 11.sp,
-                                        )
-                                    }
-                                    Spacer(Modifier.weight(1f))
-                                    Switch(
-                                        checked = uiState.mirrorsProcessing,
-                                        onCheckedChange = onMirrorsProcessing,
-                                        colors = if (uiState.mirrors.desiredEnabled) {
-                                            SwitchDefaults.colors()
-                                        } else {
-                                            SwitchDefaults.colors(
-                                                checkedThumbColor = DisabledInk,
-                                                checkedTrackColor = DisabledMuted,
-                                            )
-                                        },
+                                labels = listOf("По сторонам", "По центру"),
+                                selectedIndex = when (uiState.mirrorsPosition) {
+                                    MirrorsPosition.SIDES -> 0
+                                    MirrorsPosition.CENTER -> 1
+                                },
+                                contentActive = uiState.mirrors.desiredEnabled,
+                                onSelect = { index ->
+                                    onMirrorsPosition(
+                                        if (index == 0) MirrorsPosition.SIDES
+                                        else MirrorsPosition.CENTER,
                                     )
-                                }
-                            }
+                                },
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            SettingsSwitchRow(
+                                title = "Улучшение изображения",
+                                subtitle = "Ярче и контрастнее",
+                                checked = uiState.mirrorsProcessing,
+                                onCheckedChange = onMirrorsProcessing,
+                                contentActive = uiState.mirrors.desiredEnabled,
+                            )
                             Spacer(Modifier.height(10.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1001,62 +948,102 @@ private fun FseInstallChoiceTile(app: FseInstallApp, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MirrorChoice(
+private fun StandardSegmentedChoiceRow(
     modifier: Modifier,
-    text: String,
-    selected: Boolean,
-    featureEnabled: Boolean,
-    onClick: () -> Unit,
+    labels: List<String>,
+    selectedIndex: Int,
+    enabled: Boolean = true,
+    contentActive: Boolean = true,
+    onSelect: (Int) -> Unit,
 ) {
-    if (selected) {
-        Button(
-            modifier = modifier,
-            onClick = onClick,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (featureEnabled) Elevated else DisabledElevated,
-                contentColor = if (featureEnabled) Accent else DisabledInk,
-            ),
-        ) { Text(text, fontSize = 12.sp) }
-    } else {
-        OutlinedButton(modifier = modifier, onClick = onClick) { Text(text, fontSize = 12.sp) }
+    Surface(
+        modifier = modifier.height(42.dp),
+        color = if (contentActive) Background else DisabledSurface,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.fillMaxSize().padding(3.dp),
+            space = 3.dp,
+        ) {
+            labels.forEachIndexed { index, label ->
+                val selected = index == selectedIndex
+                SegmentedButton(
+                    modifier = Modifier.weight(1f),
+                    selected = selected,
+                    onClick = { onSelect(index) },
+                    enabled = enabled,
+                    shape = RoundedCornerShape(9.dp),
+                    icon = {},
+                    colors = SegmentedButtonDefaults.colors(
+                        activeContainerColor = if (contentActive) Elevated else DisabledElevated,
+                        activeContentColor = if (contentActive) Accent else DisabledInk,
+                        inactiveContainerColor = Color.Transparent,
+                        inactiveContentColor = if (contentActive) Ink else DisabledInk,
+                    ),
+                    border = BorderStroke(0.dp, Color.Transparent),
+                    label = {
+                        Text(
+                            label,
+                            fontSize = 11.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                        )
+                    },
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun NavigationPlacementChoice(
-    modifier: Modifier,
-    text: String,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    controlEnabled: Boolean = true,
+    contentActive: Boolean = true,
 ) {
     Surface(
-        modifier = modifier
-            .height(38.dp)
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) Elevated else Color.Transparent,
-        border = BorderStroke(
-            1.dp,
-            when {
-                !enabled -> DisabledMuted
-                selected -> Accent
-                else -> Elevated
-            },
-        ),
+        modifier = Modifier.fillMaxWidth(),
+        color = if (contentActive) Elevated else DisabledElevated,
+        shape = RoundedCornerShape(14.dp),
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text,
-                color = when {
-                    !enabled -> DisabledMuted
-                    selected -> Accent
-                    else -> Ink
-                },
-                fontSize = 10.sp,
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            )
-        }
+        ListItem(
+            headlineContent = {
+                Text(
+                    title,
+                    color = if (contentActive) Ink else DisabledInk,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
+            },
+            supportingContent = {
+                Text(
+                    subtitle,
+                    color = if (contentActive) Muted else DisabledMuted,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                )
+            },
+            trailingContent = {
+                Switch(
+                    checked = checked,
+                    onCheckedChange = onCheckedChange,
+                    enabled = controlEnabled,
+                    colors = if (contentActive) {
+                        SwitchDefaults.colors()
+                    } else {
+                        SwitchDefaults.colors(
+                            checkedThumbColor = DisabledInk,
+                            checkedTrackColor = DisabledMuted,
+                        )
+                    },
+                )
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        )
     }
 }
 
@@ -1222,27 +1209,32 @@ private fun SelectedSimulcastApps(apps: List<SimulcastAppChoice>) {
         Text("Приложения не выбраны", color = Muted, fontSize = 12.sp)
         return
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        apps.take(6).forEach { app ->
-            Row(
-                modifier = Modifier.height(18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CompactAppIcon(
-                    icon = app.icon,
-                    key = app.packageName,
-                    fallback = Icons.Outlined.Apps,
-                )
-                Spacer(Modifier.width(7.dp))
-                Text(
-                    app.label,
-                    color = Ink,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            apps.take(6).forEach { app ->
+                Surface(
+                    modifier = Modifier.size(32.dp),
+                    color = Elevated,
+                    shape = RoundedCornerShape(9.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        CompactAppIcon(
+                            icon = app.icon,
+                            key = app.packageName,
+                            fallback = Icons.Outlined.Apps,
+                            size = 26.dp,
+                        )
+                    }
+                }
             }
         }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "выбрано ${apps.size} из 6",
+            color = Muted,
+            fontSize = 12.sp,
+            maxLines = 1,
+        )
     }
 }
 
@@ -1251,6 +1243,7 @@ private fun CompactAppIcon(
     icon: Drawable?,
     key: String,
     fallback: ImageVector,
+    size: Dp = 18.dp,
 ) {
     val bitmap = remember(key, icon) {
         icon?.toBitmap(48, 48)?.asImageBitmap()
@@ -1259,11 +1252,11 @@ private fun CompactAppIcon(
         Image(
             painter = BitmapPainter(bitmap),
             contentDescription = null,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(size),
             contentScale = ContentScale.Fit,
         )
     } else {
-        Icon(fallback, null, modifier = Modifier.size(18.dp), tint = Muted)
+        Icon(fallback, null, modifier = Modifier.size(size), tint = Muted)
     }
 }
 
