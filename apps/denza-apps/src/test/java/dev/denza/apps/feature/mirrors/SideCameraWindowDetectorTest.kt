@@ -58,4 +58,23 @@ class SideCameraWindowDetectorTest {
         assertEquals(2, result.avcCandidateBlocks)
         assertEquals(0, result.unrecognizedCandidates)
     }
+
+    @Test
+    fun `global focus tail does not create an AVC candidate in a foreign window`() {
+        val windows = """
+            WINDOW MANAGER WINDOWS (dumpsys window visible)
+              Window #1 Window{abc com.byd.avc/com.byd.avc.PIP2MeterActivity}
+                mDisplayId=7 package=com.byd.avc
+              Window #2 Window{def com.example/.MainActivity}
+                mDisplayId=0 package=com.example
+              mCurrentFocus=Window{999 u0 com.byd.avc/com.byd.avc.PIP2MeterActivity}
+              mInputMethodTarget=Window{def u0 com.example/.MainActivity}
+        """.trimIndent()
+
+        val result = SideCameraWindowDetector.analyze(windows, 7)
+
+        assertEquals(MirrorSide.LEFT, result.recognizedSide)
+        assertEquals(1, result.avcCandidateBlocks)
+        assertEquals(0, result.unrecognizedCandidates)
+    }
 }

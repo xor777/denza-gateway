@@ -37,7 +37,7 @@ object SideCameraWindowDetector {
     }
 
     private fun candidateBlocks(windows: String): List<String> =
-        blockStart.split(windows).filter { it.contains("com.byd.avc") }
+        blockStart.split(windows).filter { it.contains("package=com.byd.avc") }
 
     private fun isLeftBlock(block: String, clusterDisplayId: Int): Boolean =
         block.contains("com.byd.avc/com.byd.avc.PIP2MeterActivity") &&
