@@ -260,4 +260,3 @@ git add docs/project-map.md \
   docs/superpowers/plans/2026-07-24-denza-apps-actionable-status.md
 git commit -m "docs(apps): describe actionable status UX"
 ```
-

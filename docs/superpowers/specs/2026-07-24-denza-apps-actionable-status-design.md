@@ -93,4 +93,3 @@ existing-control policy. The Android build and lint verify Compose integration.
 The final review checks that card heights remain exactly 314 dp and 96 dp, the
 large-card attention path does not render the old extra message row, and no
 permanent control was added.
-
