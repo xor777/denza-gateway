@@ -92,6 +92,19 @@ class HudNotificationArtworkTest {
     }
 
     @Test
+    fun transientExtractionFailureKeepsLastCompatibleArtwork() {
+        val store = HudNotificationArtworkStore(featureEnabled = { true })
+        val png = byteArrayOf(13, 14)
+        store.update("route", png, capturedAtMs = 9_900L)
+        assertArrayEquals(png, store.resolve(guidance(), nowMs = 10_000L))
+
+        store.reject("route", "no-remote-views")
+
+        assertArrayEquals(png, store.resolve(guidance(), nowMs = 10_100L))
+        assertEquals("no-remote-views", store.diagnostics().lastFailure)
+    }
+
+    @Test
     fun unknownManeuverNeverUsesNotificationArtwork() {
         val store = HudNotificationArtworkStore(featureEnabled = { true })
         store.update("route", byteArrayOf(14), capturedAtMs = 9_900L)

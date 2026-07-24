@@ -104,6 +104,13 @@ internal class HudNotificationArtworkStore(
     }
 
     @Synchronized
+    fun reject(notificationKey: String?, reason: String) {
+        if (notificationKey == null || artwork?.notificationKey == notificationKey) {
+            lastFailure = reason
+        }
+    }
+
+    @Synchronized
     fun setListenerConnected(connected: Boolean) {
         listenerConnected = connected
         if (!connected) {
@@ -194,6 +201,11 @@ object HudNotificationArtworkRuntime {
     @JvmStatic
     fun clear(notificationKey: String?, reason: String) {
         store.clear(notificationKey, reason)
+    }
+
+    @JvmStatic
+    fun reject(notificationKey: String?, reason: String) {
+        store.reject(notificationKey, reason)
     }
 
     @JvmStatic

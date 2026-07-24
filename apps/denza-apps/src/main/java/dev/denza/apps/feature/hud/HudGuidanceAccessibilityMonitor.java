@@ -9,7 +9,7 @@ import android.view.accessibility.AccessibilityEvent;
 /** Polls the visible Yandex guidance model and publishes only fresh, validated instructions. */
 public final class HudGuidanceAccessibilityMonitor {
     private static final long POLL_INTERVAL_MS = 350L;
-    private static final long LOST_ROUTE_GRACE_MS = 1800L;
+    private static final long LOST_ROUTE_GRACE_MS = 3000L;
     private static final long HEARTBEAT_MS = 5000L;
 
     private final AccessibilityService service;
@@ -69,6 +69,9 @@ public final class HudGuidanceAccessibilityMonitor {
         }
         long now = SystemClock.uptimeMillis();
         HudGuidance guidance = YandexGuidanceAccessibilityReader.read(service);
+        if (guidance == null) {
+            guidance = HudNotificationGuidanceRuntime.resolve(lastGuidance, now);
+        }
         if (guidance != null) {
             lastSeenMs = now;
             HudNotificationArtworkRuntime.observe(guidance, now);

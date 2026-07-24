@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.Icon
 import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -19,8 +20,11 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.RemoteViews
+import android.widget.TextView
 import androidx.core.graphics.createBitmap
 import java.io.ByteArrayOutputStream
+import java.lang.reflect.Field
+import java.util.Locale
 import kotlin.math.roundToInt
 
 class YandexNotificationArtworkListener : NotificationListenerService() {
@@ -38,11 +42,13 @@ class YandexNotificationArtworkListener : NotificationListenerService() {
         val found = active.any(::process)
         if (!found) {
             HudNotificationArtworkRuntime.clear(null, "no-active-yandex-artwork")
+            HudNotificationGuidanceRuntime.clear()
         }
     }
 
     override fun onListenerDisconnected() {
         HudNotificationArtworkRuntime.clear(null, "listener-disconnected")
+        HudNotificationGuidanceRuntime.clear()
         HudNotificationArtworkRuntime.setListenerConnected(false)
         HudNotificationAccessCoordinator.ensureAccess(this) {
             if (
@@ -71,12 +77,14 @@ class YandexNotificationArtworkListener : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         if (sbn?.packageName == YANDEX_PACKAGE) {
             HudNotificationArtworkRuntime.clear(sbn.key, "notification-removed")
+            HudNotificationGuidanceRuntime.clear()
         }
         super.onNotificationRemoved(sbn)
     }
 
     override fun onDestroy() {
         HudNotificationArtworkRuntime.clear(null, "listener-destroyed")
+        HudNotificationGuidanceRuntime.clear()
         HudNotificationArtworkRuntime.setListenerConnected(false)
         super.onDestroy()
     }
@@ -87,18 +95,33 @@ class YandexNotificationArtworkListener : NotificationListenerService() {
         }.getOrElse { error ->
             YandexArtworkExtraction(null, "extract:${error.shortName()}")
         }
+        val capturedAtMs = SystemClock.uptimeMillis()
+        val guidanceUpdated = result.guidanceFields?.let { fields ->
+            HudNotificationGuidanceRuntime.update(fields, capturedAtMs)
+        } == true
+        if (result.detail == "no-remote-views") {
+            HudNotificationGuidanceRuntime.clear()
+        }
         val png = result.png
         if (png == null) {
-            HudNotificationArtworkRuntime.clear(sbn.key, result.detail)
-            Log.d(TAG, "artwork rejected key=${sbn.key} reason=${result.detail}")
-            return false
+            HudNotificationArtworkRuntime.reject(sbn.key, result.detail)
+            Log.d(
+                TAG,
+                "artwork rejected key=${sbn.key} reason=${result.detail} " +
+                    "backgroundGuidance=$guidanceUpdated",
+            )
+            return guidanceUpdated
         }
         HudNotificationArtworkRuntime.update(
             notificationKey = sbn.key,
             png = png,
-            capturedAtMs = SystemClock.uptimeMillis(),
+            capturedAtMs = capturedAtMs,
         )
-        Log.d(TAG, "artwork captured key=${sbn.key} bytes=${png.size}")
+        Log.d(
+            TAG,
+            "artwork captured key=${sbn.key} bytes=${png.size} " +
+                "backgroundGuidance=$guidanceUpdated",
+        )
         return true
     }
 
@@ -114,6 +137,7 @@ class YandexNotificationArtworkListener : NotificationListenerService() {
 internal data class YandexArtworkExtraction(
     val png: ByteArray?,
     val detail: String,
+    val guidanceFields: YandexNotificationGuidanceFields? = null,
 )
 
 internal object YandexRemoteViewsArtworkExtractor {
@@ -138,13 +162,31 @@ internal object YandexRemoteViewsArtworkExtractor {
         }
 
         var lastApplyFailure: String? = null
+        var lastGuidanceFields: YandexNotificationGuidanceFields? = null
         layouts.forEach { remoteViews ->
+            val actionFields = YandexRemoteViewsActionExtractor.extract(
+                packageContext,
+                remoteViews,
+            )
             val root = runCatching {
                 val parent = FrameLayout(packageContext)
                 remoteViews.apply(packageContext, parent)
             }.getOrElse { error ->
                 lastApplyFailure = "remoteviews-apply:${error.shortName()}"
+                if (YandexNotificationGuidanceParser.parse(actionFields) != null) {
+                    return YandexArtworkExtraction(
+                        png = null,
+                        detail = lastApplyFailure!!,
+                        guidanceFields = actionFields,
+                    )
+                }
                 return@forEach
+            }
+            val guidanceFields = actionFields.merge(
+                extractGuidanceFields(root, packageContext),
+            )
+            if (YandexNotificationGuidanceParser.parse(guidanceFields) != null) {
+                lastGuidanceFields = guidanceFields
             }
             val png = runCatching {
                 extractFromRoot(root, packageContext)
@@ -153,13 +195,36 @@ internal object YandexRemoteViewsArtworkExtractor {
                 null
             }
             if (png != null) {
-                return YandexArtworkExtraction(png, "notification")
+                return YandexArtworkExtraction(
+                    png = png,
+                    detail = "notification",
+                    guidanceFields = guidanceFields,
+                )
             }
         }
         return YandexArtworkExtraction(
             png = null,
             detail = lastApplyFailure ?: "no-maneuver-candidate",
+            guidanceFields = lastGuidanceFields,
         )
+    }
+
+    private fun extractGuidanceFields(
+        root: View,
+        packageContext: Context,
+    ): YandexNotificationGuidanceFields {
+        var fields = YandexNotificationGuidanceFields()
+        walk(root) { view ->
+            val name = resourceName(view, packageContext).lowercase(Locale.ROOT)
+            val value = when (view) {
+                is TextView -> view.text?.toString().orEmpty()
+                is ImageView -> view.contentDescription?.toString().orEmpty()
+                else -> ""
+            }.trim()
+            if (value.isEmpty()) return@walk
+            fields = fields.withValue(name, value)
+        }
+        return fields
     }
 
     private fun extractFromRoot(root: View, packageContext: Context): ByteArray? {
@@ -322,3 +387,116 @@ internal object YandexRemoteViewsArtworkExtractor {
 
     private const val YANDEX_PACKAGE = "ru.yandex.yandexnavi"
 }
+
+private object YandexRemoteViewsActionExtractor {
+    fun extract(
+        packageContext: Context,
+        remoteViews: RemoteViews,
+    ): YandexNotificationGuidanceFields {
+        return runCatching {
+            val actionsField = RemoteViews::class.java.getDeclaredField("mActions")
+            actionsField.isAccessible = true
+            val actions = actionsField.get(remoteViews) as? Collection<*>
+                ?: return YandexNotificationGuidanceFields()
+            var fields = YandexNotificationGuidanceFields()
+            actions.filterNotNull().forEach { action ->
+                val actionFields = collectFields(action.javaClass)
+                val viewId = actionFields.readNumber("viewId", action)?.toInt() ?: return@forEach
+                val viewName = resourceName(packageContext, viewId)
+                val methodName = actionFields.readString("methodName", action).orEmpty()
+                val value = actionFields.readValue(action)
+                if (methodName == "setText" && value is CharSequence) {
+                    fields = fields.withValue(viewName, value.toString())
+                } else if (
+                    viewName == "primaryicontinted" &&
+                    methodName.contains("Image", ignoreCase = true)
+                ) {
+                    val resourceId = when (value) {
+                        is Number -> value.toInt()
+                        is Icon -> if (value.type == Icon.TYPE_RESOURCE) value.resId else 0
+                        else -> 0
+                    }
+                    if (resourceId != 0) {
+                        fields = fields.copy(
+                            maneuverResourceName = resourceName(packageContext, resourceId),
+                        )
+                    }
+                }
+            }
+            fields
+        }.getOrDefault(YandexNotificationGuidanceFields())
+    }
+
+    private fun collectFields(type: Class<*>): List<Field> = buildList {
+        var current: Class<*>? = type
+        while (current != null) {
+            current.declaredFields.forEach { field ->
+                runCatching { field.isAccessible = true }
+                    .onSuccess { add(field) }
+            }
+            current = current.superclass
+        }
+    }
+
+    private fun List<Field>.readNumber(name: String, target: Any): Number? =
+        firstOrNull { it.name == name }
+            ?.let { runCatching { it.get(target) as? Number }.getOrNull() }
+
+    private fun List<Field>.readString(name: String, target: Any): String? =
+        firstOrNull { it.name == name }
+            ?.let { runCatching { it.get(target) as? String }.getOrNull() }
+
+    private fun List<Field>.readValue(target: Any): Any? {
+        firstOrNull { it.name == "value" }?.let { field ->
+            runCatching { field.get(target) }.getOrNull()?.let { return it }
+        }
+        return firstNotNullOfOrNull { field ->
+            if (
+                field.name == "viewId" ||
+                field.name == "methodName" ||
+                field.type.isPrimitive
+            ) {
+                null
+            } else {
+                runCatching { field.get(target) }.getOrNull()
+                    ?.takeIf { it is CharSequence || it is Number || it is Icon }
+            }
+        }
+    }
+
+    private fun resourceName(context: Context, id: Int): String =
+        runCatching { context.resources.getResourceEntryName(id) }
+            .getOrDefault("")
+            .lowercase(Locale.ROOT)
+}
+
+private fun YandexNotificationGuidanceFields.withValue(
+    resourceName: String,
+    value: String,
+): YandexNotificationGuidanceFields = when (resourceName.lowercase(Locale.ROOT)) {
+    "primaryicontinted", "nextmaneuver" ->
+        copy(maneuverDescription = maneuverDescription.ifEmpty { value })
+    "titleview" -> copy(title = title.ifEmpty { value })
+    "descriptionview" -> copy(description = description.ifEmpty { value })
+    "remainingdistanceview" ->
+        copy(remainingDistance = remainingDistance.ifEmpty { value })
+    "remainingtimeview" -> copy(remainingTime = remainingTime.ifEmpty { value })
+    "timeofarrivalview" -> copy(arrivalTime = arrivalTime.ifEmpty { value })
+    else -> this
+}
+
+private fun YandexNotificationGuidanceFields.merge(
+    rendered: YandexNotificationGuidanceFields,
+): YandexNotificationGuidanceFields = YandexNotificationGuidanceFields(
+    maneuverResourceName = maneuverResourceName.ifEmpty {
+        rendered.maneuverResourceName
+    },
+    maneuverDescription = rendered.maneuverDescription.ifEmpty {
+        maneuverDescription
+    },
+    title = rendered.title.ifEmpty { title },
+    description = description.ifEmpty { rendered.description },
+    remainingDistance = rendered.remainingDistance.ifEmpty { remainingDistance },
+    remainingTime = rendered.remainingTime.ifEmpty { remainingTime },
+    arrivalTime = rendered.arrivalTime.ifEmpty { arrivalTime },
+)
