@@ -138,6 +138,7 @@ class SideCameraMonitorService : Service() {
                 runtime = runtime,
                 nowMs = now,
                 runtimeWindowAmbiguous = runtimeWindowAmbiguous,
+                fastSwitchQueueEnabled = MirrorsSettings.fastSwitchGuardEnabled(this),
             ),
         )
         if (result.state.phase != transitionState.phase) {
