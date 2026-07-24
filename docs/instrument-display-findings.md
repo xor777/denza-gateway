@@ -161,8 +161,24 @@ cmd notification allow_listener \
 The same idempotent repair runs after boot, APK replacement, app startup, and a
 listener disconnect. A failed repair remains diagnostic-only and does not stop
 guidance or replace the Canvas fallback.
-The notification artwork path is locally tested and built but still needs
-live-car verification against the current Yandex notification layout.
+On the tested Yandex build, the foreground notification can collapse to
+`contentView=null`, while moving Yandex fully into the background produces the
+rich navigation `RemoteViews`. Denza Apps therefore retains the last compatible
+notification artwork across a transient minimal notification. A maneuver change
+still invalidates old artwork and immediately uses the Canvas fallback.
+
+The same rich notification is now a secondary guidance source while Yandex has
+no visible accessibility window. Its named distance, road, remaining-distance,
+remaining-time, and arrival fields are read from the rendered `RemoteViews`;
+the maneuver resource name is read opportunistically from `RemoteViews`
+actions. Reflection failure is harmless: visible Accessibility guidance remains
+authoritative and unsupported background layouts still clear after a three
+second transition grace. A plain `Навигатор запущен` notification is never
+treated as an active route. Notification removal, listener loss, and stale
+background data clear the secondary state.
+
+The artwork and background-guidance paths are locally tested and built but
+still need a live minimized-route check on the car.
 
 The app-owned navigation `VirtualDisplay` includes `VIRTUAL_DISPLAY_FLAG_PUBLIC`
 in addition to `PRESENTATION | OWN_CONTENT_ONLY`. Without `PUBLIC`, Android kept
@@ -229,11 +245,11 @@ Denza Apps continued publishing the live right-turn update (`30 m`, `51 km`,
 projection while Yandex was shown on the instrument display; the crash buffer
 remained empty.
 
-Updates are deduplicated with a five-second heartbeat. If no valid visible
-route is found for 1.8 seconds, Denza Apps clears the road guidance. Disabling
-the switch clears, stops, and unbinds the stock service. Unknown maneuver text
-is never guessed as a straight arrow: text and distance may continue, but the
-directional image is omitted.
+Updates are deduplicated with a five-second heartbeat. If neither a valid
+visible route nor a fresh rich-notification route is found for three seconds,
+Denza Apps clears the road guidance. Disabling the switch clears, stops, and
+unbinds the stock service. Unknown maneuver text is never guessed as a straight
+arrow: text and distance may continue, but the directional image is omitted.
 
 ## Central IVI split routing
 
@@ -265,6 +281,16 @@ Turning the switch off moves routed non-shell tasks back to the fullscreen root
 that contains Denza Apps and restores the stock launcher/map anchors. The toggle
 only changes routing; it does not launch an app. The card keeps this mechanism
 out of its user-facing text.
+
+Pane identity is not derived from geometry. The stock divider can expand its
+launcher root to the full `2560 x 1600` display while Android keeps a separate
+fullscreen Home root under the same `com.android.launcher3` package. Denza Apps
+therefore matches the exact stock anchor activities and rejects Home roots by
+activity type; an ambiguous snapshot is left untouched. Already-restored
+anchors are also left in place. On 2026-07-24 this was live-verified with the
+stock launcher expanded fullscreen: switching routing off preserved root `3`,
+ignored Home root `1`, changed the stored/UI state to off, and produced no task
+move error or `com.byd.avc` crash.
 
 Navigation and Simulcast own their task transitions independently of this
 router. Starting, projecting, returning, or stopping either feature cancels the
