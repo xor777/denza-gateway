@@ -376,7 +376,10 @@ Hardware-dependent checks still open:
   testing;
 - fast left-to-right turn-signal switching is a confirmed crash path while
   Denza Apps owns the AVC display surface. The persistent-Surface candidate did
-  not fix it; pause-based operation remains a known compatibility limitation.
+  not fix it. A locally tested two-phase close now removes the app window before
+  releasing AVC and reports `STOPPING` until teardown completes; its visual
+  close still needs a live-car check. Automatic opposite-side opening remains
+  disabled, so pause-based operation is still the compatibility limitation.
 
 A `com.byd.avc` crash is an escalation alert. Save the evidence, tell the user
 once, and continue safe work. Avoid repeating the same suspected trigger until

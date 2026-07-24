@@ -511,6 +511,23 @@ This restores the pause-based Denza Mirrors compatibility behavior. Rapid
 left-to-right switching remains unverified after the fix and must still be
 treated as the known unsafe case.
 
+The quarantine added on 2026-07-23 prevents a direct side change from issuing a
+second `initDisplay()`: it closes the active app-owned presentation once, then
+waits for three neutral window samples before accepting another camera session.
+That protects the vendor service, but the first implementation published
+`IDLE` before `Presentation.dismiss()` and the synchronous `freeDisplay()` had
+finished. When the vendor call was slow, the last frame could therefore remain
+visible even though the transition had already entered quarantine.
+
+The 2026-07-24 local follow-up makes teardown two-phase. The presentation window
+is removed first, `freeDisplay()` runs on the next main-loop turn, and the camera
+runtime remains `STOPPING` until that work completes. Quarantine cannot recover
+while runtime is `STOPPING`, and a new camera request is rejected during that
+phase. This change is locally unit-tested and built but still needs one
+live-car close check. It deliberately does not queue the opposite side:
+automatically opening it without a confirmed neutral interval would re-enter
+the known AVC crash path.
+
 ### Stock-owned non-AIDL candidate (2026-07-18)
 
 The stock cluster projection Binder resolves the real calling package and
