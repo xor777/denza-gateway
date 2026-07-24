@@ -30,7 +30,6 @@ import dev.denza.apps.feature.navigation.NavigationPhase
 import dev.denza.apps.feature.navigation.NavigationSettings
 import dev.denza.apps.feature.split.SplitScreenCoordinator
 import dev.denza.apps.feature.split.SplitScreenPhase
-import dev.denza.apps.feature.trip.TripSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,7 +85,6 @@ data class DenzaUiState(
     val fseInstallerPickerVisible: Boolean = false,
     val fseInstallApps: List<FseInstallApp> = emptyList(),
     val fseInstallerMessage: String = "",
-    val tripPanelEnabled: Boolean = true,
 )
 
 /** Android-facing state owner shared by the Compose shell and runtime services. */
@@ -157,14 +155,7 @@ object DenzaAppRepository {
             hudGuidance = evaluateHudGuidance(context),
             technicalDetails = supportDiagnostics(context),
             clusterCandidates = ClusterDisplayResolver.candidates(context),
-            tripPanelEnabled = TripSettings.isEnabled(context),
         )
-    }
-
-    fun setTripPanelEnabled(enabled: Boolean) {
-        val context = appContext ?: return
-        TripSettings.setEnabled(context, enabled)
-        refresh()
     }
 
     fun setSimulcastEnabled(enabled: Boolean) {

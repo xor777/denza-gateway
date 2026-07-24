@@ -18,6 +18,8 @@ enum class TripMode(val storageValue: Int) {
 
     fun next(): TripMode = entries[(ordinal + 1) % entries.size]
 
+    fun previous(): TripMode = entries[(ordinal - 1 + entries.size) % entries.size]
+
     companion object {
         fun fromStorage(value: Int): TripMode = entries.firstOrNull { it.storageValue == value } ?: FLIGHT
     }

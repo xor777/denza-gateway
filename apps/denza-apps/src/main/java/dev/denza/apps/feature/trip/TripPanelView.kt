@@ -12,16 +12,20 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.findViewTreeLifecycleOwner
+import kotlin.math.abs
 
 /**
  * The trip panel itself: a lean custom View that draws directly on the screen
  * background (no card, no border, no frame), runs a Choreographer loop throttled
  * to <=30 FPS, owns the sensor/GNSS hub, and cycles the three renderers.
  *
- * Discipline for a car head unit: sensors and rendering are fully stopped when
- * the panel is not visible, the activity is paused, or the flag is off (the flag
- * case is handled by Compose simply not adding this view). The draw path
- * preallocates all Paint/Path/array state.
+ * The whole panel is gated by the compile-time [TripPanelFlag]; when it is off,
+ * Compose never adds this view, so nothing here runs.
+ *
+ * Controls: a tap cycles forward; a horizontal swipe changes mode (left = next,
+ * right = previous). Mode changes play a short slide + crossfade between the two
+ * renderers. Sensors and rendering are fully stopped when the panel is not
+ * visible or the activity is paused. The draw path preallocates all Paint state.
  */
 @SuppressLint("ViewConstructor")
 class TripPanelView(context: Context) : View(context), Choreographer.FrameCallback {
@@ -37,19 +41,33 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
     private var lastDrawNs = 0L
     private var lastFrameNs = 0L
 
-    /** Invoked on a long-press so the host can confirm hiding the panel. */
-    var onRequestHide: (() -> Unit)? = null
+    // Slide + crossfade transition state.
+    private var transitionFrom: TripMode? = null
+    private var transitionDir = 1
+    private var transitionStartNs = 0L
 
     private val gestureDetector = GestureDetector(
         context,
         object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                cycleMode()
+                changeMode(mode.next(), direction = 1)
                 return true
             }
 
-            override fun onLongPress(e: MotionEvent) {
-                onRequestHide?.invoke()
+            override fun onFling(
+                e1: MotionEvent?,
+                e2: MotionEvent,
+                velocityX: Float,
+                velocityY: Float,
+            ): Boolean {
+                // Only a mostly-horizontal, fast enough gesture counts as a swipe;
+                // GestureDetector already applied touch slop so taps never reach here.
+                if (abs(velocityX) < SWIPE_MIN_VELOCITY || abs(velocityX) <= abs(velocityY)) {
+                    return false
+                }
+                if (velocityX < 0) changeMode(mode.next(), direction = 1)
+                else changeMode(mode.previous(), direction = -1)
+                return true
             }
         },
     )
@@ -64,8 +82,12 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
         isClickable = true
     }
 
-    private fun cycleMode() {
-        mode = mode.next()
+    private fun changeMode(newMode: TripMode, direction: Int) {
+        if (newMode == mode) return
+        transitionFrom = mode
+        transitionDir = direction
+        transitionStartNs = System.nanoTime()
+        mode = newMode
         TripSettings.setMode(context, mode)
         invalidate()
     }
@@ -94,6 +116,7 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
         startNs = System.nanoTime()
         lastDrawNs = 0L
         lastFrameNs = 0L
+        transitionFrom = null
         Choreographer.getInstance().postFrameCallback(this)
     }
 
@@ -122,11 +145,56 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
         val frameTime = (now - startNs) / 1_000_000_000.0
         // Each renderer places the "no location access" hint in an area that
         // stays clear of its own layout; the panel no longer draws it globally.
-        renderers[mode.ordinal].draw(
-            canvas, width.toFloat(), height.toFloat(), engine, frameTime, dt,
-            showLocationHint = !hub.locationGranted,
-        )
+        val showHint = !hub.locationGranted
+
+        val from = transitionFrom
+        if (from == null) {
+            renderers[mode.ordinal].draw(
+                canvas, width.toFloat(), height.toFloat(), engine, frameTime, dt, showHint,
+            )
+        } else {
+            val raw = (now - transitionStartNs) / 1_000_000.0 / TRANSITION_MS
+            if (raw >= 1.0) {
+                transitionFrom = null
+                renderers[mode.ordinal].draw(
+                    canvas, width.toFloat(), height.toFloat(), engine, frameTime, dt, showHint,
+                )
+            } else {
+                val ease = smoothstep(raw)
+                val slide = width * SLIDE_FRACTION
+                // Outgoing renderer slides away and fades out; incoming one slides
+                // in from the swipe direction and fades in. A cheap, transient
+                // saveLayerAlpha handles the fade — no bitmap snapshots.
+                drawLayer(
+                    canvas, from, engine, frameTime, dt, showHint,
+                    offsetX = (-transitionDir * ease * slide).toFloat(),
+                    alpha = (1.0 - ease).toFloat(),
+                )
+                drawLayer(
+                    canvas, mode, engine, frameTime, dt, showHint,
+                    offsetX = (transitionDir * (1.0 - ease) * slide).toFloat(),
+                    alpha = ease.toFloat(),
+                )
+            }
+        }
         drawModeIndicator(canvas)
+    }
+
+    private fun drawLayer(
+        canvas: Canvas,
+        m: TripMode,
+        engine: TripEngine,
+        frameTime: Double,
+        dt: Double,
+        showHint: Boolean,
+        offsetX: Float,
+        alpha: Float,
+    ) {
+        val a = (alpha.coerceIn(0f, 1f) * 255f).toInt()
+        val restore = canvas.saveLayerAlpha(0f, 0f, width.toFloat(), height.toFloat(), a)
+        canvas.translate(offsetX, 0f)
+        renderers[m.ordinal].draw(canvas, width.toFloat(), height.toFloat(), engine, frameTime, dt, showHint)
+        canvas.restoreToCount(restore)
     }
 
     private fun drawModeIndicator(canvas: Canvas) {
@@ -157,5 +225,13 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
 
     private companion object {
         const val MIN_FRAME_NS = 1_000_000_000L / 30L
+        const val TRANSITION_MS = 250.0
+        const val SLIDE_FRACTION = 0.16f
+        const val SWIPE_MIN_VELOCITY = 400f
+
+        fun smoothstep(t: Double): Double {
+            val x = t.coerceIn(0.0, 1.0)
+            return x * x * (3.0 - 2.0 * x)
+        }
     }
 }

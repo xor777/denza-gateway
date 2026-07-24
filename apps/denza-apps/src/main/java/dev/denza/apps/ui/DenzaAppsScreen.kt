@@ -80,6 +80,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import dev.denza.apps.DenzaUiState
+import dev.denza.apps.feature.trip.TripPanelFlag
 import dev.denza.apps.feature.trip.TripPanelView
 import dev.denza.apps.NavigationAppChoice
 import dev.denza.apps.SimulcastAppChoice
@@ -132,11 +133,9 @@ fun DenzaAppsRoot(
     onChooseFseApp: () -> Unit,
     onCloseFseInstallerPicker: () -> Unit,
     onInstallFseApp: (String) -> Unit,
-    onSetTripPanelEnabled: (Boolean) -> Unit,
 ) {
     val uiState by state.collectAsState()
     var showClusterPicker by remember { mutableStateOf(false) }
-    var showHideTripPanel by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
     // Hidden diagnostics entry: 7 quick taps on the Трансляция card header, each
     // within 3 s of the previous, opens the diagnostics dialog. No affordance.
@@ -394,15 +393,12 @@ fun DenzaAppsRoot(
                     }
                     Spacer(Modifier.height(10.dp))
                     // Trip panel lives in the free zone below the cards, drawn
-                    // straight on the background with no card/border/frame. When
-                    // the flag is off the space is simply empty (no sensors run).
-                    if (uiState.tripPanelEnabled) {
+                    // straight on the background with no card/border/frame. Gated
+                    // by the compile-time TripPanelFlag: when off, the space is
+                    // simply empty and no sensors/location run.
+                    if (TripPanelFlag.ENABLED) {
                         AndroidView(
-                            factory = { ctx ->
-                                TripPanelView(ctx).apply {
-                                    onRequestHide = { showHideTripPanel = true }
-                                }
-                            },
+                            factory = { ctx -> TripPanelView(ctx) },
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
                     } else {
@@ -413,15 +409,6 @@ fun DenzaAppsRoot(
         }
     }
 
-    if (showHideTripPanel) {
-        HideTripPanelDialog(
-            onConfirm = {
-                showHideTripPanel = false
-                onSetTripPanelEnabled(false)
-            },
-            onDismiss = { showHideTripPanel = false },
-        )
-    }
     if (showDiagnostics) {
         DiagnosticsDialog(
             state = uiState,
@@ -1084,54 +1071,6 @@ private fun DenzaTheme(content: @Composable () -> Unit) {
         ),
         content = content,
     )
-}
-
-@Composable
-private fun HideTripPanelDialog(
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            color = SurfaceColor,
-            shape = RoundedCornerShape(26.dp),
-        ) {
-            Column(modifier = Modifier.padding(28.dp)) {
-                Text(
-                    "Скрыть панель поездки?",
-                    color = Ink,
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "Нижняя панель исчезнет, датчики и геолокация остановятся.",
-                    color = Muted,
-                    fontSize = 14.sp,
-                )
-                Spacer(Modifier.height(22.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Отмена", color = Muted)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = onConfirm,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Accent,
-                            contentColor = Color(0xFF06251C),
-                        ),
-                    ) {
-                        Text("Скрыть", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
