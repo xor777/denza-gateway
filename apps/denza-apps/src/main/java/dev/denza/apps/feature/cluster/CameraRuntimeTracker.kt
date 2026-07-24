@@ -14,6 +14,9 @@ class CameraRuntimeTracker {
     fun ready(side: MirrorSide, details: String): CameraRuntimeSnapshot =
         publish(CameraRuntimePhase.READY, side, details)
 
+    fun stopping(details: String): CameraRuntimeSnapshot =
+        publish(CameraRuntimePhase.STOPPING, current.get().side, details)
+
     fun failed(details: String): CameraRuntimeSnapshot =
         publish(CameraRuntimePhase.FAILED, current.get().side, details)
 

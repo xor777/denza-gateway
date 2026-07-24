@@ -6,6 +6,7 @@ enum class CameraRuntimePhase {
     IDLE,
     STARTING,
     READY,
+    STOPPING,
     FAILED,
 }
 

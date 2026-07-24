@@ -153,6 +153,10 @@ class ClusterSceneService : Service() {
     }
 
     private fun showCamera(config: MirrorCameraConfig) {
+        if (cameraRuntime.snapshot().phase == CameraRuntimePhase.STOPPING) {
+            updateNotification("Waiting for camera cleanup")
+            return
+        }
         cameraRuntime.starting(config.side)
         val scene = prepareCameraScene()
         if (scene == null) {
@@ -172,11 +176,28 @@ class ClusterSceneService : Service() {
         }
     }
 
-    private fun hideCamera() {
-        cameraRuntime.idle("camera hidden")
-        cameraPresentation?.dismiss()
+    private fun hideCamera(onComplete: (() -> Unit)? = null) {
+        val presentation = cameraPresentation
         cameraPresentation = null
-        updateNotification("Mirrors are ready")
+        if (presentation == null) {
+            cameraRuntime.idle("camera hidden")
+            updateNotification("Mirrors are ready")
+            onComplete?.invoke()
+            return
+        }
+
+        val stopping = cameraRuntime.stopping("closing camera surface")
+        presentation.dismissAfterSurfaceRelease {
+            val runtime = cameraRuntime.snapshot()
+            if (
+                runtime.phase == CameraRuntimePhase.STOPPING &&
+                runtime.generation == stopping.generation
+            ) {
+                cameraRuntime.idle("camera hidden")
+                updateNotification("Mirrors are ready")
+            }
+            onComplete?.invoke()
+        }
     }
 
     private fun showMap(placement: ClusterMapPlacement) {
@@ -274,6 +295,9 @@ class ClusterSceneService : Service() {
         private lateinit var cameraFrame: FrameLayout
         private lateinit var diagnosticLayer: FrameLayout
         private lateinit var renderer: AvcCameraRenderer
+        private var teardownScheduled = false
+        private var teardownFinished = false
+        private val teardownCallbacks = mutableListOf<() -> Unit>()
         private var mapConsumer: MapSurfaceConsumer? = null
         private var expectedMapWidth = 0
         private var expectedMapHeight = 0
@@ -340,15 +364,41 @@ class ClusterSceneService : Service() {
         }
 
         override fun dismiss() {
-            // Match the verified Denza Mirrors teardown order. Dismissing the
-            // window first destroys the TextureView surface; only then may the
-            // vendor AVC display be freed. Calling freeDisplay while the
-            // surface is still attached makes libvc_sdk_ui abort after a delay.
+            dismissAfterSurfaceRelease()
+        }
+
+        fun dismissAfterSurfaceRelease(onComplete: (() -> Unit)? = null) {
+            onComplete?.let(teardownCallbacks::add)
+            if (teardownFinished) {
+                completeTeardownCallbacks()
+                return
+            }
+            if (teardownScheduled) return
+            teardownScheduled = true
+
+            // Remove the window first so the last camera buffer cannot remain
+            // visible while the vendor freeDisplay binder call is running.
+            // The next main-loop turn preserves the verified surface-before-
+            // freeDisplay order without blocking the window-removal transaction.
             try {
                 super.dismiss()
             } finally {
-                if (::renderer.isInitialized) renderer.stop()
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        if (::renderer.isInitialized) renderer.stop()
+                    } finally {
+                        teardownFinished = true
+                        completeTeardownCallbacks()
+                    }
+                }
             }
+        }
+
+        private fun completeTeardownCallbacks() {
+            if (!teardownFinished) return
+            val callbacks = teardownCallbacks.toList()
+            teardownCallbacks.clear()
+            callbacks.forEach { it() }
         }
 
         fun showCamera(config: MirrorCameraConfig) {
@@ -928,8 +978,7 @@ class ClusterSceneService : Service() {
             }
             val latch = CountDownLatch(1)
             Handler(Looper.getMainLooper()).post {
-                service.hideCamera()
-                latch.countDown()
+                service.hideCamera(latch::countDown)
             }
             return latch.await(timeoutMs.coerceAtLeast(1L), TimeUnit.MILLISECONDS)
         }

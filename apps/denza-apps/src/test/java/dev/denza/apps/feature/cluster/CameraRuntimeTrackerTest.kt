@@ -6,7 +6,7 @@ import org.junit.Test
 
 class CameraRuntimeTrackerTest {
     @Test
-    fun publishesMonotonicStartingReadyFailureAndIdleSnapshots() {
+    fun publishesMonotonicStartingReadyStoppingFailureAndIdleSnapshots() {
         val tracker = CameraRuntimeTracker()
 
         assertEquals(CameraRuntimeSnapshot(), tracker.snapshot())
@@ -21,14 +21,20 @@ class CameraRuntimeTrackerTest {
         assertEquals(2L, ready.generation)
         assertEquals("initialized", ready.details)
 
+        val stopping = tracker.stopping("closing camera surface")
+        assertEquals(CameraRuntimePhase.STOPPING, stopping.phase)
+        assertEquals(MirrorSide.LEFT, stopping.side)
+        assertEquals(3L, stopping.generation)
+        assertEquals("closing camera surface", stopping.details)
+
         val failed = tracker.failed("binder died")
         assertEquals(CameraRuntimePhase.FAILED, failed.phase)
         assertEquals(MirrorSide.LEFT, failed.side)
-        assertEquals(3L, failed.generation)
+        assertEquals(4L, failed.generation)
 
         val idle = tracker.idle("hidden")
         assertEquals(CameraRuntimePhase.IDLE, idle.phase)
         assertEquals(null, idle.side)
-        assertEquals(4L, idle.generation)
+        assertEquals(5L, idle.generation)
     }
 }

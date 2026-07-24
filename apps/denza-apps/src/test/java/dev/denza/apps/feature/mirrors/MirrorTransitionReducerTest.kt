@@ -231,6 +231,26 @@ class MirrorTransitionReducerTest {
         assertEquals(MirrorTransitionCommand.None, reset.command)
     }
 
+    @Test
+    fun teardownMustFinishBeforeNeutralCanRecoverQuarantine() {
+        val state = MirrorTransitionState(
+            phase = MirrorTransitionPhase.QUARANTINED,
+            neutralSamples = 2,
+            details = "direct side switch",
+        )
+
+        val stopping = reduce(
+            state = state,
+            requested = null,
+            runtime = runtime(CameraRuntimePhase.STOPPING, MirrorSide.LEFT, generation = 3L),
+            nowMs = 300L,
+        )
+
+        assertEquals(MirrorTransitionPhase.QUARANTINED, stopping.state.phase)
+        assertEquals(0, stopping.state.neutralSamples)
+        assertEquals(MirrorTransitionCommand.None, stopping.command)
+    }
+
     private fun reduce(
         state: MirrorTransitionState,
         requested: MirrorSide?,
