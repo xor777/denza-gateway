@@ -43,12 +43,25 @@ class GlassRenderer : BaseTripRenderer() {
     private val hts = FloatArray(160)
     private val bucketBuf = FloatArray(160)
 
-    override fun draw(canvas: Canvas, w: Float, h: Float, engine: TripEngine, frameTimeSec: Double, dtSec: Double) {
+    override fun draw(
+        canvas: Canvas,
+        w: Float,
+        h: Float,
+        engine: TripEngine,
+        frameTimeSec: Double,
+        dtSec: Double,
+        showLocationHint: Boolean,
+    ) {
         setSize(w, h)
         advancePhysics(engine, dtSec)
         drawGlass(canvas, engine)
         drawStats(canvas, engine)
         drawRibbon(canvas, engine)
+        if (showLocationHint) {
+            // Top-right corner: above the ribbon (which starts ~y192) and right of
+            // the stats, so it never touches the glass caption, stats, or ribbon.
+            label(canvas, LOCATION_HINT, w - vx(24f), vy(30f), 15f, TripPalette.alpha(TripPalette.MUTED, 0.6f), Paint.Align.RIGHT)
+        }
     }
 
     private fun advancePhysics(engine: TripEngine, dtSec: Double) {

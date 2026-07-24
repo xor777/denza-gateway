@@ -31,7 +31,6 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
     private var mode: TripMode = TripSettings.mode(context)
 
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val hintPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var looping = false
     private var startNs = 0L
@@ -121,9 +120,13 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
         val dt = if (lastFrameNs == 0L) 1.0 / 30.0 else (now - lastFrameNs) / 1_000_000_000.0
         lastFrameNs = now
         val frameTime = (now - startNs) / 1_000_000_000.0
-        renderers[mode.ordinal].draw(canvas, width.toFloat(), height.toFloat(), engine, frameTime, dt)
+        // Each renderer places the "no location access" hint in an area that
+        // stays clear of its own layout; the panel no longer draws it globally.
+        renderers[mode.ordinal].draw(
+            canvas, width.toFloat(), height.toFloat(), engine, frameTime, dt,
+            showLocationHint = !hub.locationGranted,
+        )
         drawModeIndicator(canvas)
-        if (!hub.locationGranted) drawLocationHint(canvas)
     }
 
     private fun drawModeIndicator(canvas: Canvas) {
@@ -140,13 +143,6 @@ class TripPanelView(context: Context) : View(context), Choreographer.FrameCallba
             }
             canvas.drawCircle(cx + (i - 1) * spacing, y, radius, dotPaint)
         }
-    }
-
-    private fun drawLocationHint(canvas: Canvas) {
-        val sy = height / 360f
-        hintPaint.color = TripPalette.alpha(TripPalette.MUTED, 0.55f)
-        hintPaint.textSize = 14f * sy
-        canvas.drawText("нет доступа к геолокации", 32f * (width / 1850f), height - 14f * sy, hintPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

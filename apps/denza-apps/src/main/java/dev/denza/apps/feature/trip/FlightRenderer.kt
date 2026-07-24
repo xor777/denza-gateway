@@ -28,12 +28,26 @@ class FlightRenderer : BaseTripRenderer() {
     private val fillPath = Path()
     private val elevBuf = FloatArray(320)
 
-    override fun draw(canvas: Canvas, w: Float, h: Float, engine: TripEngine, frameTimeSec: Double, dtSec: Double) {
+    override fun draw(
+        canvas: Canvas,
+        w: Float,
+        h: Float,
+        engine: TripEngine,
+        frameTimeSec: Double,
+        dtSec: Double,
+        showLocationHint: Boolean,
+    ) {
         setSize(w, h)
         drawHorizon(canvas, engine)
         drawCompass(canvas, engine)
         drawElevation(canvas, engine)
         drawColumn(canvas, engine)
+        if (showLocationHint) {
+            // Right data column: its GNSS rows (Высота/Закат) are hidden without a
+            // fix, so the lower part of that column is empty. Keeps well clear of
+            // the "крен · тангаж" caption under the horizon on the far left.
+            label(canvas, LOCATION_HINT, vx(1436f), vy(320f), 16f, TripPalette.alpha(TripPalette.MUTED, 0.85f))
+        }
     }
 
     private fun drawHorizon(canvas: Canvas, engine: TripEngine) {

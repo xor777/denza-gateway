@@ -26,10 +26,24 @@ class ThreadRenderer : BaseTripRenderer() {
     private val color = FloatArray(2000)
     private val energy = FloatArray(2000)
 
-    override fun draw(canvas: Canvas, w: Float, h: Float, engine: TripEngine, frameTimeSec: Double, dtSec: Double) {
+    override fun draw(
+        canvas: Canvas,
+        w: Float,
+        h: Float,
+        engine: TripEngine,
+        frameTimeSec: Double,
+        dtSec: Double,
+        showLocationHint: Boolean,
+    ) {
         setSize(w, h)
         label(canvas, "Нить поездки", vx(32f), vy(34f), 18f, TripPalette.alpha(TripPalette.MUTED, 0.85f))
         drawLegend(canvas)
+        if (showLocationHint) {
+            // Bottom-left corner: the header is top-left and the legend is
+            // top-right, so this stays clear of both, of the centred "нить строится"
+            // placeholder, and of the bottom-centre mode dots.
+            label(canvas, LOCATION_HINT, vx(32f), h - vs(14f), 15f, TripPalette.alpha(TripPalette.MUTED, 0.6f))
+        }
 
         val count = engine.copyRouteInto(shape, color, energy)
         if (count < 2) {

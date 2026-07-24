@@ -53,8 +53,19 @@ interface TripRenderer {
     /**
      * @param frameTimeSec monotonic seconds since the panel started (for phase)
      * @param dtSec seconds since the previous drawn frame (for spring integration)
+     * @param showLocationHint when true, draw the muted "no location access" hint;
+     *   each mode places it in an area that stays clear of its own captions/stats/
+     *   ribbon/legend in both the GNSS and no-GNSS states.
      */
-    fun draw(canvas: Canvas, w: Float, h: Float, engine: TripEngine, frameTimeSec: Double, dtSec: Double)
+    fun draw(
+        canvas: Canvas,
+        w: Float,
+        h: Float,
+        engine: TripEngine,
+        frameTimeSec: Double,
+        dtSec: Double,
+        showLocationHint: Boolean,
+    )
 }
 
 /**
@@ -128,6 +139,7 @@ abstract class BaseTripRenderer : TripRenderer {
     companion object {
         const val VIRTUAL_W = 1850f
         const val VIRTUAL_H = 360f
+        const val LOCATION_HINT = "нет доступа к геолокации"
 
         fun pad2(n: Int): String = if (n < 10) "0$n" else n.toString()
 
