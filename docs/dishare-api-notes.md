@@ -555,6 +555,32 @@ Two more live sessions settled what the quarantine can and cannot do.
   order (window removal before `freeDisplay`) needs at least one frame; this
   path is unproven and needs a dedicated probe before any product change.
 
+### Accessibility push-timing probe (2026-07-24, `tools/a11y-window-timing-probe.sh`)
+
+Measured on live isolated cycles with `uiautomator events` against
+WindowManager `addWindow` truth: the first accessibility event arrives
+**+30/+35 ms** after the stock right alert window is added and **+71 ms**
+after the left PIP activity window. The vehicle-event alternative is falsified
+(see `research/vehicle-events/README.md`), so this push is the earliest
+app-visible trigger.
+
+Race math: +35 ms trigger + current two-phase teardown (105–142 ms measured
+via the `DenzaClusterScene` marks) = ~140–177 ms — inside the soft 174 ms
+budget but past the hard 95 ms case. An emergency teardown that frees the AVC
+display in the same main-loop turn as the surface release (~50–60 ms
+estimated) would land at ~85–95 ms, marginally inside even the hard case.
+Prerequisites for a product attempt: `notificationTimeout=0` on the
+accessibility service (currently 100 ms, which would eat the whole budget),
+an in-process bridge from the accessibility service to the mirror runtime,
+and an explicit live trial plan, since losing the race still crashes the
+stock process (same outcome as today's guaranteed crash).
+
+Unrelated finding from the same session: the `TYPE_APPLICATION_OVERLAY`
+presentation path throws `IllegalArgumentException: Window type mismatch` on
+every `showCamera` on this firmware and always falls back to the normal
+camera window. Functional, but the overlay attempt is dead code here and
+logs a full stack per activation.
+
 ### Stock-owned non-AIDL candidate (2026-07-18)
 
 The stock cluster projection Binder resolves the real calling package and
