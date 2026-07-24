@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -58,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -73,10 +75,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.graphics.drawable.toBitmap
 import dev.denza.apps.DenzaUiState
+import dev.denza.apps.feature.trip.TripPanelView
 import dev.denza.apps.NavigationAppChoice
 import dev.denza.apps.SimulcastAppChoice
 import dev.denza.apps.core.FeatureSnapshot
@@ -128,12 +132,26 @@ fun DenzaAppsRoot(
     onChooseFseApp: () -> Unit,
     onCloseFseInstallerPicker: () -> Unit,
     onInstallFseApp: (String) -> Unit,
+    onSetTripPanelEnabled: (Boolean) -> Unit,
 ) {
     val uiState by state.collectAsState()
-    var showSupport by remember { mutableStateOf(false) }
-    var showTechnical by remember { mutableStateOf(false) }
     var showClusterPicker by remember { mutableStateOf(false) }
-    var titleTaps by remember { mutableIntStateOf(0) }
+    var showHideTripPanel by remember { mutableStateOf(false) }
+    var showDiagnostics by remember { mutableStateOf(false) }
+    // Hidden diagnostics entry: 7 quick taps on the Трансляция card header, each
+    // within 3 s of the previous, opens the diagnostics dialog. No affordance.
+    var diagnosticsTaps by remember { mutableIntStateOf(0) }
+    var lastDiagnosticsTapMs by remember { mutableLongStateOf(0L) }
+    val onTransmissionHeaderTap = {
+        val now = System.currentTimeMillis()
+        diagnosticsTaps = if (now - lastDiagnosticsTapMs <= 3000L) diagnosticsTaps + 1 else 1
+        lastDiagnosticsTapMs = now
+        if (diagnosticsTaps >= 7) {
+            diagnosticsTaps = 0
+            onRefreshScreenDiagnostics()
+            showDiagnostics = true
+        }
+    }
     val selectedNavigationApp = uiState.navigationAppChoices.firstOrNull { it.selected }
     val navigationActions = FeatureActionPolicy.navigation(
         uiState.navigation,
@@ -250,6 +268,7 @@ fun DenzaAppsRoot(
                         switchValue = uiState.simulcast.desiredEnabled,
                         onSwitch = onToggleSimulcast,
                         actionsFillRemaining = true,
+                        onHeaderTap = onTransmissionHeaderTap,
                     ) {
                         Column(modifier = Modifier.fillMaxSize()) {
                             SelectedSimulcastApps(uiState.selectedApps)
@@ -373,36 +392,41 @@ fun DenzaAppsRoot(
                             onClick = onChooseFseApp,
                         )
                     }
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(10.dp))
+                    // Trip panel lives in the free zone below the cards, drawn
+                    // straight on the background with no card/border/frame. When
+                    // the flag is off the space is simply empty (no sensors run).
+                    if (uiState.tripPanelEnabled) {
+                        AndroidView(
+                            factory = { ctx ->
+                                TripPanelView(ctx).apply {
+                                    onRequestHide = { showHideTripPanel = true }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
                 }
-                CompactHelpButton(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .windowInsetsPadding(WindowInsets.safeDrawing)
-                        .padding(end = 40.dp, bottom = 8.dp),
-                    onSupport = { showSupport = true },
-                )
             }
         }
     }
 
-    if (showSupport) {
-        SupportDialog(
+    if (showHideTripPanel) {
+        HideTripPanelDialog(
+            onConfirm = {
+                showHideTripPanel = false
+                onSetTripPanelEnabled(false)
+            },
+            onDismiss = { showHideTripPanel = false },
+        )
+    }
+    if (showDiagnostics) {
+        DiagnosticsDialog(
             state = uiState,
-            showTechnical = showTechnical,
             onSelectClusterDisplay = onSelectClusterDisplay,
-            onTitleTap = {
-                titleTaps += 1
-                if (titleTaps >= 7) {
-                    titleTaps = 0
-                    showTechnical = true
-                    onRefreshScreenDiagnostics()
-                }
-            },
-            onDismiss = {
-                showSupport = false
-                showTechnical = false
-            },
+            onDismiss = { showDiagnostics = false },
         )
     }
     if (showClusterPicker) {
@@ -1063,14 +1087,164 @@ private fun DenzaTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun CompactHelpButton(
-    modifier: Modifier,
-    onSupport: () -> Unit,
+private fun HideTripPanelDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    TextButton(modifier = modifier, onClick = onSupport) {
-        Icon(Icons.Outlined.Info, null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(7.dp))
-        Text("Помощь", fontSize = 13.sp)
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            color = SurfaceColor,
+            shape = RoundedCornerShape(26.dp),
+        ) {
+            Column(modifier = Modifier.padding(28.dp)) {
+                Text(
+                    "Скрыть панель поездки?",
+                    color = Ink,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Нижняя панель исчезнет, датчики и геолокация остановятся.",
+                    color = Muted,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(22.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена", color = Muted)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = onConfirm,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color(0xFF06251C),
+                        ),
+                    ) {
+                        Text("Скрыть", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticsDialog(
+    state: DenzaUiState,
+    onSelectClusterDisplay: (Int?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.72f),
+            color = SurfaceColor,
+            shape = RoundedCornerShape(26.dp),
+        ) {
+            Column(modifier = Modifier.padding(28.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Build, null, tint = Accent)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "Диагностика",
+                        color = Ink,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Spacer(Modifier.height(22.dp))
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 430.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    state.technicalDetails
+                        .lineSequence()
+                        .filter { it.isNotBlank() }
+                        .forEach { line ->
+                            DiagnosticRow(
+                                label = line.substringBefore('='),
+                                value = line.substringAfter('=', missingDelimiterValue = "—"),
+                            )
+                        }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Выбор экрана приборки", color = Ink, fontWeight = FontWeight.SemiBold)
+                    state.clusterCandidates
+                        .filter { it.id != 0 && !it.isOwnVirtualDisplay }
+                        .forEach { display ->
+                            OutlinedButton(
+                                onClick = { onSelectClusterDisplay(display.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                                border = BorderStroke(1.dp, Elevated),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
+                            ) {
+                                Text("#${display.id} · ${display.width}×${display.height} · ${display.name}")
+                            }
+                        }
+                    TextButton(
+                        onClick = { onSelectClusterDisplay(null) },
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text("Определять автоматически", color = Accent)
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color(0xFF06251C),
+                        ),
+                    ) {
+                        Text("Закрыть", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticRow(label: String, value: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Elevated,
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                label,
+                color = Muted,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(0.42f),
+            )
+            Text(
+                value,
+                color = Ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(0.58f),
+            )
+        }
     }
 }
 
@@ -1087,9 +1261,11 @@ private fun FeatureCard(
     switchEnabled: Boolean = true,
     onSwitch: ((Boolean) -> Unit)? = null,
     actionsFillRemaining: Boolean = false,
+    onHeaderTap: (() -> Unit)? = null,
     actions: @Composable () -> Unit,
 ) {
     val featureEnabled = switchValue != false
+    val headerInteraction = remember { MutableInteractionSource() }
     Card(
         modifier = modifier.height(314.dp),
         shape = RoundedCornerShape(22.dp),
@@ -1121,7 +1297,19 @@ private fun FeatureCard(
                     color = if (featureEnabled) Ink else DisabledInk,
                     fontSize = 21.sp,
                     fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .then(
+                            if (onHeaderTap != null) {
+                                Modifier.clickable(
+                                    interactionSource = headerInteraction,
+                                    indication = null,
+                                    onClick = onHeaderTap,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        ),
                     maxLines = 1,
                 )
                 if (switchValue != null && onSwitch != null) {
@@ -1384,136 +1572,6 @@ private fun ClusterDisplayPickerDialog(
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun SupportDialog(
-    state: DenzaUiState,
-    showTechnical: Boolean,
-    onSelectClusterDisplay: (Int?) -> Unit,
-    onTitleTap: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(0.72f),
-            color = SurfaceColor,
-            shape = RoundedCornerShape(26.dp),
-        ) {
-            Column(modifier = Modifier.padding(28.dp)) {
-                Row(
-                    modifier = Modifier.clickable(enabled = !showTechnical, onClick = onTitleTap),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        if (showTechnical) Icons.Outlined.Build else Icons.Outlined.Info,
-                        null,
-                        tint = Accent,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        if (showTechnical) "Диагностика" else "Как пользоваться",
-                        color = Ink,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Spacer(Modifier.height(22.dp))
-                if (!showTechnical) {
-                    Text(
-                        "здесь пока ничего нет\nhttps://github.com/xor777/denza-lab",
-                        color = Muted,
-                    )
-                } else {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 430.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        state.technicalDetails
-                            .lineSequence()
-                            .filter { it.isNotBlank() }
-                            .forEach { line ->
-                                DiagnosticRow(
-                                    label = line.substringBefore('='),
-                                    value = line.substringAfter('=', missingDelimiterValue = "—"),
-                                )
-                            }
-                        Spacer(Modifier.height(8.dp))
-                        Text("Выбор экрана приборки", color = Ink, fontWeight = FontWeight.SemiBold)
-                        state.clusterCandidates
-                            .filter { it.id != 0 && !it.isOwnVirtualDisplay }
-                            .forEach { display ->
-                                OutlinedButton(
-                                    onClick = { onSelectClusterDisplay(display.id) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    border = BorderStroke(1.dp, Elevated),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
-                                ) {
-                                    Text("#${display.id} · ${display.width}×${display.height} · ${display.name}")
-                                }
-                            }
-                        TextButton(
-                            onClick = { onSelectClusterDisplay(null) },
-                            modifier = Modifier.align(Alignment.End),
-                        ) {
-                            Text("Определять автоматически", color = Accent)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(22.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Button(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Accent,
-                            contentColor = Color(0xFF06251C),
-                        ),
-                    ) {
-                        Text("Закрыть", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DiagnosticRow(label: String, value: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Elevated,
-        shape = RoundedCornerShape(12.dp),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                label,
-                color = Muted,
-                fontSize = 13.sp,
-                modifier = Modifier.weight(0.42f),
-            )
-            Text(
-                value,
-                color = Ink,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.weight(0.58f),
-            )
         }
     }
 }

@@ -1,12 +1,27 @@
 package dev.denza.apps
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
+import dev.denza.apps.feature.trip.TripSettings
 import dev.denza.apps.ui.DenzaAppsRoot
 
 class MainActivity : ComponentActivity() {
+
+    private var locationRequested = false
+
+    // The trip panel uses GNSS when granted and degrades gracefully otherwise.
+    // We ask at most once per process; a denial is respected (the panel shows a
+    // muted hint and keeps running its IMU-only elements).
+    private val locationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            DenzaAppRepository.refresh()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -40,6 +55,7 @@ class MainActivity : ComponentActivity() {
                     onChooseFseApp = DenzaAppRepository::showFseInstallerPicker,
                     onCloseFseInstallerPicker = DenzaAppRepository::hideFseInstallerPicker,
                     onInstallFseApp = DenzaAppRepository::installOnPassengerScreen,
+                    onSetTripPanelEnabled = DenzaAppRepository::setTripPanelEnabled,
                 )
             },
         )
@@ -49,6 +65,19 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         DenzaAppRepository.refresh()
         SimulcastOverlayService.hide(this)
+        maybeRequestLocation()
+    }
+
+    private fun maybeRequestLocation() {
+        if (locationRequested) return
+        if (!TripSettings.isEnabled(this)) return
+        val granted = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) return
+        locationRequested = true
+        locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
     }
 
     override fun onPause() {
