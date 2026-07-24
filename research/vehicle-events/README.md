@@ -24,8 +24,15 @@ lives in
   app-level listeners produced no usable turn-signal callbacks.
 - 2026-07-24 logcat capture falsified `28600009` as a stalk-edge trigger: it is
   a continuous broadcast (~25–45 events/s, value toggling 0/1) that keeps
-  firing while parked with both turn signals off. A wider capture of all
-  `postEvent` device types around a signal flip has not been analyzed yet.
+  firing while parked with both turn signals off.
+- 2026-07-24 wide capture (all `postEvent` device types) mined around six
+  live signal edges found no stalk-correlated event at all. Every near-edge
+  type was periodic telemetry (bodywork accelerometer flood, PM2.5 device
+  `1008/4f60001x` every 2 s) or uncorrelated toggles (`1023/2ec00020`).
+  Turn-signal state does not transit any logcat-visible `postEvent` channel;
+  the early-vehicle-event trigger idea is falsified end to end. The only
+  remaining in-architecture fast-switch candidate is an accessibility
+  window-push trigger (~10–20 ms) against the measured 95–174 ms crash budget.
 
 ## If Research Resumes
 
