@@ -22,23 +22,39 @@ class SimulcastAccessibilityAccessTest {
     }
 
     @Test
-    fun `rebind removes only simulcast service and restores it once`() {
-        val original = "system/service:${SimulcastAccessibilityAccess.COMPONENT}:voice/service"
+    fun `recognizes guard component separately from the simulcast one`() {
+        val guardOnly = "system/service:${SimulcastAccessibilityAccess.GUARD_COMPONENT}"
+        assertTrue(SimulcastAccessibilityAccess.isGuardEnabled(guardOnly))
+        assertFalse(SimulcastAccessibilityAccess.isEnabled(guardOnly))
+        assertTrue(
+            SimulcastAccessibilityAccess.isGuardEnabled(
+                "dev.denza.apps/.feature.mirrors.MirrorGuardAccessibilityService",
+            ),
+        )
+        assertFalse(SimulcastAccessibilityAccess.isGuardEnabled("system/service:voice/service"))
+    }
+
+    @Test
+    fun `rebind removes only owned services and restores both once`() {
+        val original = "system/service:${SimulcastAccessibilityAccess.COMPONENT}" +
+            ":${SimulcastAccessibilityAccess.GUARD_COMPONENT}:voice/service"
 
         val disabled = SimulcastAccessibilityAccess.withoutService(original)
         val enabled = SimulcastAccessibilityAccess.withService(disabled)
 
         assertEquals("system/service:voice/service", disabled)
         assertEquals(
-            "system/service:voice/service:${SimulcastAccessibilityAccess.COMPONENT}",
+            "system/service:voice/service:${SimulcastAccessibilityAccess.COMPONENT}" +
+                ":${SimulcastAccessibilityAccess.GUARD_COMPONENT}",
             enabled,
         )
     }
 
     @Test
-    fun `empty Android setting enables only simulcast service`() {
+    fun `empty Android setting enables both owned services`() {
         assertEquals(
-            SimulcastAccessibilityAccess.COMPONENT,
+            "${SimulcastAccessibilityAccess.COMPONENT}" +
+                ":${SimulcastAccessibilityAccess.GUARD_COMPONENT}",
             SimulcastAccessibilityAccess.withService("null"),
         )
     }
