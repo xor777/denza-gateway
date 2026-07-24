@@ -1,7 +1,9 @@
 package dev.denza.apps.feature.trip
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -13,6 +15,7 @@ import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import androidx.core.app.ActivityCompat
 import dev.denza.apps.feature.hud.HudGuidanceRuntime
 import java.util.TimeZone
 
@@ -46,6 +49,7 @@ class TripSensorHub(private val context: Context) : SensorEventListener, Locatio
     private var haveGravity = false
     private val gyro = DoubleArray(3)
     private var lastGuidancePollMs = 0L
+    private var runtimeFallbackRequested = false
 
     fun start() {
         if (running) return
@@ -56,7 +60,7 @@ class TripSensorHub(private val context: Context) : SensorEventListener, Locatio
         registerSensor(Sensor.TYPE_GRAVITY)
         registerSensor(Sensor.TYPE_GYROSCOPE)
         registerSensor(Sensor.TYPE_ACCELEROMETER)
-        requestLocation()
+        ensureLocationAccess()
     }
 
     fun stop() {
@@ -79,9 +83,30 @@ class TripSensorHub(private val context: Context) : SensorEventListener, Locatio
         sensorManager.registerListener(this, sensor, SAMPLING_PERIOD_US, handler)
     }
 
-    private fun requestLocation() {
+    /**
+     * Start GNSS if already permitted, otherwise self-heal the permission over
+     * ADB and, only if that channel fails, fall back to the runtime dialog. The
+     * panel keeps running its IMU-only elements throughout; GNSS elements light up
+     * once the grant lands (live for the ADB path, on the next start for a dialog
+     * the user answers). See [TripLocationAccessCoordinator].
+     */
+    private fun ensureLocationAccess() {
         locationGranted = hasLocationPermission()
-        if (!locationGranted) return
+        if (locationGranted) {
+            startLocationUpdates()
+            return
+        }
+        TripLocationAccessCoordinator.ensureAccess(context) {
+            // May run on a background thread; hop back to the main looper.
+            handler.post {
+                if (!running) return@post
+                locationGranted = hasLocationPermission()
+                if (locationGranted) startLocationUpdates() else requestRuntimeFallback()
+            }
+        }
+    }
+
+    private fun startLocationUpdates() {
         val lm = locationManager ?: return
         runCatching {
             if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
@@ -94,6 +119,27 @@ class TripSensorHub(private val context: Context) : SensorEventListener, Locatio
                 )
             }
         }
+    }
+
+    /** Last-resort runtime prompt, asked at most once per panel session. */
+    private fun requestRuntimeFallback() {
+        if (runtimeFallbackRequested) return
+        val activity = context.findActivity() ?: return
+        runtimeFallbackRequested = true
+        ActivityCompat.requestPermissions(
+            activity,
+            arrayOf(TripLocationAccessPolicy.FINE, TripLocationAccessPolicy.COARSE),
+            LOCATION_REQUEST_CODE,
+        )
+    }
+
+    private fun Context.findActivity(): Activity? {
+        var current: Context? = this
+        while (current is ContextWrapper) {
+            if (current is Activity) return current
+            current = current.baseContext
+        }
+        return null
     }
 
     fun hasLocationPermission(): Boolean =
@@ -171,5 +217,6 @@ class TripSensorHub(private val context: Context) : SensorEventListener, Locatio
         const val SAMPLING_PERIOD_US = 33_333 // ~30 Hz
         const val LOCATION_MIN_INTERVAL_MS = 1_000L
         const val GUIDANCE_POLL_MS = 300L
+        const val LOCATION_REQUEST_CODE = 4207
     }
 }
