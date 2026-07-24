@@ -64,6 +64,13 @@ class ClusterSceneService : Service() {
                 position = intent.position(),
                 visible = intent.getBooleanExtra(EXTRA_VISIBLE, false),
                 durationMs = intent.getLongExtra(EXTRA_DURATION, 1_000L),
+                cameraOverlay = true,
+            )
+            ACTION_PREVIEW_BASE -> showPreview(
+                position = intent.position(),
+                visible = intent.getBooleanExtra(EXTRA_VISIBLE, false),
+                durationMs = intent.getLongExtra(EXTRA_DURATION, 1_000L),
+                cameraOverlay = false,
             )
             else -> prepareBaseScene()
         }
@@ -184,8 +191,14 @@ class ClusterSceneService : Service() {
         basePresentation?.hideMap()
     }
 
-    private fun showPreview(position: MirrorsPosition, visible: Boolean, durationMs: Long) {
-        val scene = prepareCameraScene() ?: return
+    private fun showPreview(
+        position: MirrorsPosition,
+        visible: Boolean,
+        durationMs: Long,
+        cameraOverlay: Boolean,
+    ) {
+        val scene = if (cameraOverlay) prepareCameraScene() else prepareBaseScene()
+        scene ?: return
         scene.showDiagnostic(position, visible)
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed({ scene.hideDiagnostic() }, durationMs.coerceIn(250L, 5_000L))
@@ -837,6 +850,7 @@ class ClusterSceneService : Service() {
         private const val ACTION_SHOW_CAMERA = "dev.denza.apps.cluster.SHOW_CAMERA"
         private const val ACTION_HIDE_CAMERA = "dev.denza.apps.cluster.HIDE_CAMERA"
         private const val ACTION_PREVIEW = "dev.denza.apps.cluster.PREVIEW"
+        private const val ACTION_PREVIEW_BASE = "dev.denza.apps.cluster.PREVIEW_BASE"
         private const val ACTION_SHOW_MAP = "dev.denza.apps.cluster.SHOW_MAP"
         private const val ACTION_HIDE_MAP = "dev.denza.apps.cluster.HIDE_MAP"
         private const val EXTRA_SIDE = "side"
@@ -870,6 +884,20 @@ class ClusterSceneService : Service() {
         ) {
             context.startForegroundService(
                 serviceIntent(context, ACTION_PREVIEW)
+                    .putExtra(EXTRA_POSITION, position.name)
+                    .putExtra(EXTRA_VISIBLE, visible)
+                    .putExtra(EXTRA_DURATION, durationMs),
+            )
+        }
+
+        fun previewBase(
+            context: Context,
+            position: MirrorsPosition,
+            visible: Boolean,
+            durationMs: Long,
+        ) {
+            context.startForegroundService(
+                serviceIntent(context, ACTION_PREVIEW_BASE)
                     .putExtra(EXTRA_POSITION, position.name)
                     .putExtra(EXTRA_VISIBLE, visible)
                     .putExtra(EXTRA_DURATION, durationMs),

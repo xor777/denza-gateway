@@ -19,6 +19,7 @@ import dev.denza.apps.feature.fse.FseInstallApp
 import dev.denza.apps.feature.fse.FseInstallResult
 import dev.denza.apps.feature.hud.HudGuidanceRuntime
 import dev.denza.apps.feature.hud.HudGuidanceSettings
+import dev.denza.apps.feature.mirrors.MirrorDisplayReadiness
 import dev.denza.apps.feature.mirrors.MirrorsPosition
 import dev.denza.apps.feature.mirrors.MirrorsSettings
 import dev.denza.apps.feature.mirrors.SideCameraMonitorService
@@ -329,15 +330,16 @@ object DenzaAppRepository {
 
     fun previewMirrors() {
         val context = appContext ?: return
-        when (ClusterDisplayResolver.resolve(context)) {
+        when (ClusterDisplayResolver.resolveCameraOverlay(context)) {
             is ClusterDisplaySelection.Selected -> ClusterSceneService.preview(
                 context,
                 MirrorsSettings.position(context),
                 visible = true,
                 durationMs = 2_200L,
             )
-            else -> refresh()
+            else -> Unit
         }
+        if (MirrorsSettings.isEnabled(context)) reconcileMirrors() else refresh()
     }
 
     fun performNavigationAction() {
@@ -422,8 +424,9 @@ object DenzaAppRepository {
     fun selectClusterDisplay(displayId: Int?) {
         val context = appContext ?: return
         ClusterDisplayResolver.saveOverride(context, displayId)
+        NavigationCoordinator.onClusterDisplaySelected()
         if (displayId != null) {
-            ClusterSceneService.preview(
+            ClusterSceneService.previewBase(
                 context,
                 MirrorsSettings.position(context),
                 visible = true,
@@ -445,28 +448,13 @@ object DenzaAppRepository {
             refresh()
             return
         }
-        when (ClusterDisplayResolver.resolve(context)) {
+        when (val selection = ClusterDisplayResolver.resolveCameraOverlay(context)) {
             is ClusterDisplaySelection.Selected -> {
                 SideCameraMonitorService.start(context)
                 refresh()
             }
-            is ClusterDisplaySelection.NeedsVerification -> mutableState.value =
-                mutableState.value.copy(
-                    mirrors = FeatureReducer.needsAction(
-                        FeatureReducer.starting(FeatureId.MIRRORS),
-                        "Выберите приборный экран",
-                        resolution = FeatureResolution.SELECT_CLUSTER_DISPLAY,
-                    ),
-                    technicalDetails = supportDiagnostics(context),
-                )
-            ClusterDisplaySelection.Missing -> mutableState.value = mutableState.value.copy(
-                mirrors = FeatureSnapshot(
-                    id = FeatureId.MIRRORS,
-                    desiredEnabled = true,
-                    status = FeatureStatus.UNAVAILABLE,
-                    message = "Приборный экран не найден",
-                    resolution = FeatureResolution.RETRY,
-                ),
+            else -> mutableState.value = mutableState.value.copy(
+                mirrors = MirrorDisplayReadiness.snapshot(selection, active = false),
                 technicalDetails = supportDiagnostics(context),
             )
         }
@@ -518,24 +506,10 @@ object DenzaAppRepository {
 
     private fun evaluateMirrors(context: Context): FeatureSnapshot {
         if (!MirrorsSettings.isEnabled(context)) return FeatureReducer.disabled(FeatureId.MIRRORS)
-        return when (ClusterDisplayResolver.resolve(context)) {
-            is ClusterDisplaySelection.Selected -> FeatureReducer.ready(
-                FeatureId.MIRRORS,
-                active = MirrorsSettings.observedSide(context) != null,
-            )
-            is ClusterDisplaySelection.NeedsVerification -> FeatureReducer.needsAction(
-                FeatureReducer.starting(FeatureId.MIRRORS),
-                "Выберите приборный экран",
-                resolution = FeatureResolution.SELECT_CLUSTER_DISPLAY,
-            )
-            ClusterDisplaySelection.Missing -> FeatureSnapshot(
-                id = FeatureId.MIRRORS,
-                desiredEnabled = true,
-                status = FeatureStatus.UNAVAILABLE,
-                message = "Приборный экран не найден",
-                resolution = FeatureResolution.RETRY,
-            )
-        }
+        return MirrorDisplayReadiness.snapshot(
+            selection = ClusterDisplayResolver.resolveCameraOverlay(context),
+            active = MirrorsSettings.observedSide(context) != null,
+        )
     }
 
     private fun evaluateHudGuidance(context: Context): FeatureSnapshot {

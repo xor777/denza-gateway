@@ -65,4 +65,25 @@ class NavigationModelsTest {
         assertEquals(NavigationPhase.RECOVERING, recovered.phase)
         assertNull(recovered.resolution)
     }
+
+    @Test
+    fun clusterSelectionRetriesOnlyTheMatchingActionableProjection() {
+        val waitingForDisplay = NavigationSession(
+            phase = NavigationPhase.NEEDS_ACTION,
+            taskId = 12,
+            resolution = FeatureResolution.SELECT_CLUSTER_DISPLAY,
+        )
+
+        assertTrue(NavigationRecovery.shouldRetryAfterClusterSelection(waitingForDisplay))
+        assertFalse(
+            NavigationRecovery.shouldRetryAfterClusterSelection(
+                waitingForDisplay.copy(resolution = FeatureResolution.RETRY),
+            ),
+        )
+        assertFalse(
+            NavigationRecovery.shouldRetryAfterClusterSelection(
+                waitingForDisplay.copy(phase = NavigationPhase.PROJECTED),
+            ),
+        )
+    }
 }

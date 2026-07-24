@@ -92,6 +92,19 @@ class FeatureActionPolicyTest {
     }
 
     @Test
+    fun `mirror display selection never opens the base display picker`() {
+        val policy = FeatureActionPolicy.mirrors(
+            snapshot(
+                FeatureId.MIRRORS,
+                FeatureResolution.SELECT_CLUSTER_DISPLAY,
+            ),
+        )
+
+        assertEquals("Повторить поиск", policy.label)
+        assertEquals(FeatureActionTarget.RETRY, policy.target)
+    }
+
+    @Test
     fun `normal controls retain their current labels and targets`() {
         val normal = FeatureSnapshot(
             id = FeatureId.NAVIGATION,

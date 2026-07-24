@@ -51,6 +51,10 @@ data class NavigationSession(
 }
 
 object NavigationRecovery {
+    fun shouldRetryAfterClusterSelection(session: NavigationSession): Boolean =
+        session.phase == NavigationPhase.NEEDS_ACTION &&
+            session.resolution == FeatureResolution.SELECT_CLUSTER_DISPLAY
+
     fun proxyLost(session: NavigationSession): NavigationSession =
         if (session.phase == NavigationPhase.PROJECTED || session.virtualDisplayId != null) {
             session.copy(

@@ -59,13 +59,13 @@ The normal control count does not change.
 - Simulcast access failure: the existing primary control becomes `Повторить` or
   `Проверить`.
 - Simulcast package absent: show `UNAVAILABLE`; do not offer `Исправить`.
-- Mirrors `SELECT_CLUSTER_DISPLAY`: the existing `Проверить камеры` control
-  becomes `Выбрать экран` and opens a simple display picker.
-- Mirrors display absent: show a neutral unavailable/retry state; the same
-  existing control becomes `Повторить поиск`.
+- Mirrors always validates the dedicated camera-overlay display. It never
+  opens the base instrument-display picker; when the overlay is absent or
+  ambiguous, the existing `Проверить камеры` control becomes
+  `Повторить поиск`.
 - Navigation `SELECT_NAVIGATION_APP`: emphasize the existing `Выбрать` control.
 - Navigation display ambiguity: the existing primary control becomes
-  `Выбрать экран`.
+  `Выбрать экран`; selecting a candidate immediately retries projection.
 - Navigation retry or car confirmation: the existing primary control becomes
   `Повторить` or `Проверить`.
 - HUD access failure: show the instruction as the compact subtitle and expose

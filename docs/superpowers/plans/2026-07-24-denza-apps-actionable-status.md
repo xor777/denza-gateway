@@ -102,7 +102,8 @@ Replace Simulcast's free-form blocker with `SimulcastBlocker`, propagate typed
 resolutions through reconciliation events, and assign explicit resolutions to
 Mirrors, HUD, and Navigation terminal states. Mark missing Simulcast as
 `UNAVAILABLE`. Make missing mirror display consistent across evaluation and
-reconciliation.
+reconciliation by checking the dedicated camera-overlay target rather than the
+base navigation display.
 
 - [ ] **Step 5: Replace technical copy**
 
@@ -139,6 +140,8 @@ Cover all mappings:
 
 - select apps/navigation app emphasizes the existing chooser;
 - select display routes the existing primary action to the picker;
+- Mirrors never routes to the base-display picker and retries discovery of its
+  dedicated camera-overlay target;
 - retry and confirmation relabel the primary action;
 - unavailable Simulcast disables its primary control;
 - normal states retain existing labels and targets.
@@ -177,6 +180,7 @@ git commit -m "feat(ui): map attention states to existing controls"
 
 Keep picker visibility as local Compose state. Show only non-default,
 non-virtual candidates and the automatic option. Do not expose diagnostics.
+After a navigation selection, immediately retry the pending projection.
 
 - [ ] **Step 2: Replace the large-card attention row**
 

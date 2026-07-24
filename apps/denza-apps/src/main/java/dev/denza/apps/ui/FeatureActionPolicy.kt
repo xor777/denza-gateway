@@ -88,8 +88,8 @@ object FeatureActionPolicy {
 
     fun mirrors(snapshot: FeatureSnapshot): SingleActionPolicy = when (snapshot.resolution) {
         FeatureResolution.SELECT_CLUSTER_DISPLAY -> SingleActionPolicy(
-            label = "Выбрать экран",
-            target = FeatureActionTarget.SELECT_CLUSTER_DISPLAY,
+            label = "Повторить поиск",
+            target = FeatureActionTarget.RETRY,
         )
         FeatureResolution.CONFIRM_ON_CAR,
         FeatureResolution.ENABLE_CAR_DEBUGGING,

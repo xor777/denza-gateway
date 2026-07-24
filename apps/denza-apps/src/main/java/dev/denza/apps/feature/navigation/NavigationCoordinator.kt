@@ -156,6 +156,14 @@ object NavigationCoordinator {
         }
     }
 
+    fun onClusterDisplaySelected() {
+        executor.execute {
+            if (NavigationRecovery.shouldRetryAfterClusterSelection(session)) {
+                projectToCluster()
+            }
+        }
+    }
+
     private fun discoverTask() {
         val app = context ?: return
         val packageName = selectedPackage
