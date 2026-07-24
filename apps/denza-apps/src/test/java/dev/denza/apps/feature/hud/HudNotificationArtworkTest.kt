@@ -49,6 +49,17 @@ class HudNotificationArtworkTest {
     }
 
     @Test
+    fun guidanceObservationAnchorsFreshnessBeforeDelayedHudConnection() {
+        val store = HudNotificationArtworkStore(featureEnabled = { true })
+        val png = byteArrayOf(8, 9, 10)
+        store.update("route", png, capturedAtMs = 9_000L)
+
+        store.observe(guidance(), nowMs = 10_000L)
+
+        assertArrayEquals(png, store.resolve(guidance(), nowMs = 12_000L))
+    }
+
+    @Test
     fun changedManeuverRejectsOlderArtwork() {
         val store = HudNotificationArtworkStore(featureEnabled = { true })
         val png = byteArrayOf(10, 11, 12)

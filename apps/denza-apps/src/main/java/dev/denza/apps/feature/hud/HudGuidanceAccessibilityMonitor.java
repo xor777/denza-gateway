@@ -71,6 +71,7 @@ public final class HudGuidanceAccessibilityMonitor {
         HudGuidance guidance = YandexGuidanceAccessibilityReader.read(service);
         if (guidance != null) {
             lastSeenMs = now;
+            HudNotificationArtworkRuntime.observe(guidance, now);
             boolean changed = !guidance.equals(lastGuidance);
             if (changed || now - lastPublishedMs >= HEARTBEAT_MS) {
                 someIpClient.publish(guidance);

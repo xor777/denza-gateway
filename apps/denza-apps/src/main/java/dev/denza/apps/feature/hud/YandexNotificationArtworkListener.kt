@@ -18,6 +18,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.RemoteViews
+import androidx.core.graphics.createBitmap
 import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 
@@ -70,7 +71,11 @@ class YandexNotificationArtworkListener : NotificationListenerService() {
     }
 
     private fun process(sbn: StatusBarNotification): Boolean {
-        val result = YandexRemoteViewsArtworkExtractor.extract(this, sbn.notification)
+        val result = runCatching {
+            YandexRemoteViewsArtworkExtractor.extract(this, sbn.notification)
+        }.getOrElse { error ->
+            YandexArtworkExtraction(null, "extract:${error.shortName()}")
+        }
         val png = result.png
         if (png == null) {
             HudNotificationArtworkRuntime.clear(sbn.key, result.detail)
@@ -130,7 +135,12 @@ internal object YandexRemoteViewsArtworkExtractor {
                 lastApplyFailure = "remoteviews-apply:${error.shortName()}"
                 return@forEach
             }
-            val png = extractFromRoot(root, packageContext)
+            val png = runCatching {
+                extractFromRoot(root, packageContext)
+            }.getOrElse { error ->
+                lastApplyFailure = "remoteviews-render:${error.shortName()}"
+                null
+            }
             if (png != null) {
                 return YandexArtworkExtraction(png, "notification")
             }
@@ -201,12 +211,18 @@ internal object YandexRemoteViewsArtworkExtractor {
             ?: OUTPUT_SIZE
         if (width < 1 || height < 1) return null
 
-        val source = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val source = createBitmap(width, height)
         val sourceCanvas = Canvas(source)
         val oldBounds = Rect(drawable.bounds)
-        drawable.setBounds(0, 0, width, height)
-        drawable.draw(sourceCanvas)
-        drawable.bounds = oldBounds
+        try {
+            drawable.setBounds(0, 0, width, height)
+            drawable.draw(sourceCanvas)
+        } catch (_: RuntimeException) {
+            source.recycle()
+            return null
+        } finally {
+            drawable.bounds = oldBounds
+        }
 
         val pixels = visibleBounds(source)
         if (pixels == null) {
@@ -219,7 +235,7 @@ internal object YandexRemoteViewsArtworkExtractor {
             pixels.rect.bottom == height &&
             pixels.visibleFraction >= 0.88f
 
-        val output = Bitmap.createBitmap(OUTPUT_SIZE, OUTPUT_SIZE, Bitmap.Config.ARGB_8888)
+        val output = createBitmap(OUTPUT_SIZE, OUTPUT_SIZE)
         val scale = minOf(
             CONTENT_SIZE.toFloat() / pixels.rect.width(),
             CONTENT_SIZE.toFloat() / pixels.rect.height(),

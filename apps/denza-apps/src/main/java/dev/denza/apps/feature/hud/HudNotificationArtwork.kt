@@ -114,6 +114,12 @@ internal class HudNotificationArtworkStore(
     }
 
     @Synchronized
+    fun observe(guidance: HudGuidance, nowMs: Long) {
+        if (!featureEnabled() || guidance.maneuver == HudManeuver.UNKNOWN) return
+        updateIdentity(guidance, nowMs)
+    }
+
+    @Synchronized
     fun resolve(guidance: HudGuidance, nowMs: Long): ByteArray? {
         if (!featureEnabled()) {
             source = HudArtworkSource.BUILT_IN
@@ -126,11 +132,7 @@ internal class HudNotificationArtworkStore(
             return null
         }
 
-        val identity = guidance.identity()
-        if (identity != currentIdentity) {
-            currentIdentity = identity
-            identityChangedAtMs = nowMs
-        }
+        updateIdentity(guidance, nowMs)
 
         val candidate = artwork
         if (candidate == null) {
@@ -166,6 +168,14 @@ internal class HudNotificationArtworkStore(
             .replace(Regex("\\s+"), " "),
         roundaboutExitNumber = roundaboutExitNumber,
     )
+
+    private fun updateIdentity(guidance: HudGuidance, nowMs: Long) {
+        val identity = guidance.identity()
+        if (identity != currentIdentity) {
+            currentIdentity = identity
+            identityChangedAtMs = nowMs
+        }
+    }
 }
 
 object HudNotificationArtworkRuntime {
@@ -189,6 +199,11 @@ object HudNotificationArtworkRuntime {
     @JvmStatic
     fun setListenerConnected(connected: Boolean) {
         store.setListenerConnected(connected)
+    }
+
+    @JvmStatic
+    fun observe(guidance: HudGuidance, nowMs: Long) {
+        store.observe(guidance, nowMs)
     }
 
     @JvmStatic
