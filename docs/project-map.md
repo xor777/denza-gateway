@@ -42,6 +42,8 @@ For current behavior, start with the implementation:
 - Package boundaries define product vs on-device research code. The historical
   `dev.denza.mirrors` / `dev.denza.mirrors.probe` split is frozen under
   `legacy/denza-mirrors/`.
+- CarPlay hardware, stock-software, Fission-boundary, and third-party MFi
+  evidence lives in [docs/carplay-findings.md](carplay-findings.md).
 - Docs explain direction and preserve field findings. If a page has drifted,
   correct that page instead of adding another status file.
 
