@@ -1,5 +1,6 @@
 package dev.denza.apps.feature.navigation
 
+import dev.denza.apps.core.FeatureResolution
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -35,5 +36,33 @@ class NavigationModelsTest {
         )
         assertEquals(NavigationPhase.RECOVERING, recovered.phase)
         assertEquals(12, recovered.taskId)
+    }
+
+    @Test
+    fun userResolutionDoesNotChangeTheExistingPrimaryLabel() {
+        val session = NavigationSession(
+            phase = NavigationPhase.NEEDS_ACTION,
+            taskId = 12,
+            message = "Выберите приборный экран",
+            resolution = FeatureResolution.SELECT_CLUSTER_DISPLAY,
+        )
+
+        assertEquals(FeatureResolution.SELECT_CLUSTER_DISPLAY, session.resolution)
+        assertEquals("На приборку", session.buttonLabel)
+    }
+
+    @Test
+    fun recoveryClearsAStaleUserResolution() {
+        val recovered = NavigationRecovery.proxyLost(
+            NavigationSession(
+                phase = NavigationPhase.PROJECTED,
+                taskId = 12,
+                virtualDisplayId = 8,
+                resolution = FeatureResolution.RETRY,
+            ),
+        )
+
+        assertEquals(NavigationPhase.RECOVERING, recovered.phase)
+        assertNull(recovered.resolution)
     }
 }
