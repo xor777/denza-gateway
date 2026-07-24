@@ -3,6 +3,11 @@
 This archived probe explored BYD vehicle events from a normal app. It stays
 outside the Android source tree and the frozen `denza-mirrors.apk` build.
 
+The current consolidated availability matrix, including GNSS/IMU frequencies,
+the exported car-status provider, and the high-level DiCar permission probe,
+lives in
+[`docs/vehicle-data-findings.md`](../../docs/vehicle-data-findings.md).
+
 ## Last Findings
 
 - Tested on the car on 2026-06-27.
