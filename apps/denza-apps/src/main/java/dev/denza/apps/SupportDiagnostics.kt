@@ -10,6 +10,7 @@ import dev.denza.apps.feature.cluster.ClusterDisplaySelection
 import dev.denza.apps.feature.cluster.ClusterSceneService
 import dev.denza.apps.feature.hud.HudGuidanceRuntime
 import dev.denza.apps.feature.hud.HudGuidanceSettings
+import dev.denza.apps.feature.hud.HudNotificationArtworkRuntime
 import dev.denza.apps.feature.mirrors.MirrorSide
 import dev.denza.apps.feature.mirrors.MirrorWindowDiagnostics
 import dev.denza.apps.feature.mirrors.MirrorsPosition
@@ -83,6 +84,12 @@ object SupportDiagnostics {
             val split = SplitScreenCoordinator.snapshot()
             add("Split screen=${split.message.ifBlank { split.phase.name.lowercase() }}")
             add("HUD-подсказки=${enabledLabel(HudGuidanceSettings.isEnabled(context))}")
+            val hudArtwork = HudNotificationArtworkRuntime.diagnostics()
+            add("Графика HUD из уведомления=${enabledLabel(hudArtwork.flagEnabled)}")
+            add("Слушатель уведомлений HUD=${yesNo(hudArtwork.listenerConnected)}")
+            add("Стрелка HUD=${hudArtwork.source.name.lowercase().replace('_', '-')}")
+            add("Состояние графики HUD=${hudArtwork.detail}")
+            hudArtwork.lastFailure?.let { add("Последний fallback HUD=$it") }
             add(
                 "Установка FSE=" +
                     fseInstaller.message.ifBlank { fseInstaller.status.name.lowercase() },

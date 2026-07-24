@@ -115,6 +115,17 @@ named maneuver nodes cover the second Yandex layout. `text_nextstreet` and
 `text_jointballoon_nextstreet` are used when Yandex makes a next-road label
 visible; otherwise field 10 stays empty instead of repeating the maneuver text.
 
+The app can also use Yandex Navigator's maneuver drawable from its active
+navigation notification. An optional `NotificationListenerService` applies
+Yandex's public `RemoteViews`, accepts only a validated maneuver `ImageView`,
+and normalizes its shape to the white transparent PNG already supported by HUD
+field 8. Accessibility remains authoritative for the maneuver, distance, road,
+and route summary. Missing notification access, an incompatible layout, stale
+artwork, or the internal kill switch all fall back silently to the existing
+Canvas renderer; none of those conditions makes the HUD card require action.
+The notification artwork path is locally tested and built but still needs
+live-car verification against the current Yandex notification layout.
+
 The app-owned navigation `VirtualDisplay` includes `VIRTUAL_DISPLAY_FLAG_PUBLIC`
 in addition to `PRESENTATION | OWN_CONTENT_ONLY`. Without `PUBLIC`, Android kept
 the projected Yandex window out of `AccessibilityService.getWindowsOnAllDisplays()`
