@@ -204,6 +204,30 @@ class ClusterSceneService : Service() {
         }
     }
 
+    /**
+     * Fast-switch guard entry: frees the vendor AVC display synchronously so an
+     * in-flight stock camera transition does not find our surface attached.
+     * Runs on the main thread; the accessibility trigger already arrives there.
+     */
+    private fun performEmergencyRelease(reason: String): Boolean {
+        val presentation = cameraPresentation ?: return false
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        Log.i(TAG, "emergency release: $reason")
+        cameraPresentation = null
+        cameraRuntime.stopping("emergency release: $reason")
+        try {
+            presentation.emergencyRelease()
+        } finally {
+            cameraRuntime.emergencyReleased("emergency released: $reason")
+            updateNotification("Camera released for stock transition")
+        }
+        Log.i(
+            TAG,
+            "emergency release done in ${android.os.SystemClock.elapsedRealtime() - startedAt}ms",
+        )
+        return true
+    }
+
     private fun showMap(placement: ClusterMapPlacement) {
         val consumer = pendingMapConsumer ?: return
         val scene = prepareBaseScene() ?: return
@@ -394,6 +418,30 @@ class ClusterSceneService : Service() {
                         teardownFinished = true
                         completeTeardownCallbacks()
                     }
+                }
+            }
+        }
+
+        /**
+         * Same window-before-freeDisplay order as [dismissAfterSurfaceRelease]
+         * but completed synchronously in this main-loop turn. This is the
+         * original verified standalone Denza Mirrors teardown; the deferred
+         * variant stays the default because it never blocks the caller on the
+         * vendor binder call. Used only by the fast-switch guard, where the
+         * stock transition must find the vendor display free within the
+         * ~95 ms crash budget.
+         */
+        fun emergencyRelease() {
+            if (teardownFinished) return
+            teardownScheduled = true
+            try {
+                super.dismiss()
+            } finally {
+                try {
+                    if (::renderer.isInitialized) renderer.stop()
+                } finally {
+                    teardownFinished = true
+                    completeTeardownCallbacks()
                 }
             }
         }
@@ -992,6 +1040,21 @@ class ClusterSceneService : Service() {
         }
 
         fun cameraRuntimeSnapshot(): CameraRuntimeSnapshot = cameraRuntime.snapshot()
+
+        /**
+         * Synchronously frees the active camera session for the fast-switch
+         * guard. Returns false when no session is active or the service is not
+         * running. Callers off the main thread fall back to a posted release,
+         * which loses the latency advantage but stays safe.
+         */
+        fun emergencyReleaseCamera(reason: String): Boolean {
+            val service = active ?: return false
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                return service.performEmergencyRelease(reason)
+            }
+            Handler(Looper.getMainLooper()).post { service.performEmergencyRelease(reason) }
+            return true
+        }
 
         private fun start(context: Context, action: String) {
             context.startForegroundService(serviceIntent(context, action))

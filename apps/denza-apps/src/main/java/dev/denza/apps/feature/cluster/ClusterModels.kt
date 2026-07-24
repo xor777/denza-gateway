@@ -15,6 +15,8 @@ data class CameraRuntimeSnapshot(
     val side: MirrorSide? = null,
     val generation: Long = 0L,
     val details: String = "",
+    /** Set when the session was torn down by the fast-switch guard, not a normal hide. */
+    val emergency: Boolean = false,
 )
 
 data class ClusterDisplayDescriptor(
