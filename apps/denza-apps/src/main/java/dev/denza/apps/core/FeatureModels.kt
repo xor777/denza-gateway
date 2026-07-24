@@ -25,12 +25,23 @@ enum class FeatureStatus {
     ERROR,
 }
 
+/** Known user resolutions. A resolution does not imply a new UI button. */
+enum class FeatureResolution {
+    SELECT_APPS,
+    SELECT_CLUSTER_DISPLAY,
+    SELECT_NAVIGATION_APP,
+    CONFIRM_ON_CAR,
+    ENABLE_CAR_DEBUGGING,
+    RETRY,
+}
+
 data class FeatureSnapshot(
     val id: FeatureId,
     val desiredEnabled: Boolean,
     val status: FeatureStatus,
     val message: String = "",
     val details: String? = null,
+    val resolution: FeatureResolution? = null,
 ) {
     val isWorking: Boolean
         get() = status == FeatureStatus.READY || status == FeatureStatus.ACTIVE
@@ -69,6 +80,7 @@ object FeatureReducer {
             status = FeatureStatus.RECOVERING,
             message = message,
             details = details,
+            resolution = null,
         )
     }
 
@@ -76,10 +88,12 @@ object FeatureReducer {
         previous: FeatureSnapshot,
         message: String,
         details: String? = null,
+        resolution: FeatureResolution? = null,
     ): FeatureSnapshot = previous.copy(
         status = FeatureStatus.NEEDS_ACTION,
         message = message,
         details = details,
+        resolution = resolution,
     )
 
     fun failed(
@@ -90,5 +104,6 @@ object FeatureReducer {
         status = FeatureStatus.ERROR,
         message = message,
         details = details,
+        resolution = null,
     )
 }
