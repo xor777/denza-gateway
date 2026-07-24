@@ -88,7 +88,7 @@ object SplitScreenCoordinator {
                 update(
                     SplitScreenSession(
                         phase = SplitScreenPhase.ERROR,
-                        message = friendlyError(error),
+                        message = friendlyError(error, "Не удалось выключить Split screen"),
                         details = error.toString(),
                     ),
                 )
@@ -138,7 +138,7 @@ object SplitScreenCoordinator {
                     SplitScreenSession(
                         enabled = true,
                         phase = SplitScreenPhase.ERROR,
-                        message = friendlyError(error),
+                        message = friendlyError(error, "Не удалось включить Split screen"),
                         details = error.toString(),
                     ),
                 )
@@ -169,14 +169,14 @@ object SplitScreenCoordinator {
         onStateChanged?.invoke()
     }
 
-    private fun friendlyError(error: Throwable): String {
+    private fun friendlyError(error: Throwable, fallback: String): String {
         val text = error.message.orEmpty()
         return when {
             text.contains("authorization pending", ignoreCase = true) ->
                 "Подтвердите ADB-ключ на экране автомобиля"
             text.contains("refused", ignoreCase = true) -> "Включите ADB на машине"
             text.contains("timeout", ignoreCase = true) -> "ADB пока не отвечает"
-            else -> "Не удалось включить Split screen"
+            else -> fallback
         }
     }
 }

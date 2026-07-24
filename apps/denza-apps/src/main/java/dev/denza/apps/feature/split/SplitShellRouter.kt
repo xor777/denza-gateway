@@ -8,8 +8,9 @@ internal class SplitShellRouter(
 
     fun tick(): Boolean {
         val snapshot = SplitTaskSnapshot.parse(shell("am stack list"))
-        val pickerPane = snapshot.pane(PICKER_ANCHOR) ?: return leaveSplit()
-        val freePane = snapshot.pane(FREE_PANE_ANCHOR) ?: return leaveSplit()
+        val panes = snapshot.stockPanes() ?: return leaveSplit()
+        val pickerPane = panes.picker
+        val freePane = panes.free
         val splitVisible = pickerPane.visible && freePane.visible
 
         if (splitVisible) {
@@ -74,8 +75,9 @@ internal class SplitShellRouter(
         val fullRoot = snapshot.roots.firstOrNull { root ->
             root.displayId == 0 && root.tasks.any { it.packageName == DENZA_APPS_PACKAGE }
         }
-        val pickerPane = snapshot.pane(PICKER_ANCHOR)
-        val freePane = snapshot.pane(FREE_PANE_ANCHOR)
+        val panes = snapshot.stockPanes()
+        val pickerPane = panes?.picker
+        val freePane = panes?.free
 
         if (fullRoot != null) {
             listOfNotNull(pickerPane, freePane)
@@ -90,17 +92,17 @@ internal class SplitShellRouter(
 
         pickerPane?.tasks
             ?.firstOrNull { it.packageName == PICKER_ANCHOR }
-            ?.let { anchor ->
-                run("am stack move-task ${anchor.id} ${pickerPane.id} true")
-                resize(anchor.id, pickerPane.bounds)
-            }
+            ?.let { restoreAnchor(it, pickerPane) }
         freePane?.tasks
             ?.firstOrNull { it.packageName == FREE_PANE_ANCHOR }
-            ?.let { anchor ->
-                run("am stack move-task ${anchor.id} ${freePane.id} true")
-                resize(anchor.id, freePane.bounds)
-            }
+            ?.let { restoreAnchor(it, freePane) }
         cancelPendingSelection()
+    }
+
+    private fun restoreAnchor(anchor: SplitTask, pane: SplitRootTask) {
+        if (pane.topPackageName == anchor.packageName && anchor.bounds == pane.bounds) return
+        run("am stack move-task ${anchor.id} ${pane.id} true")
+        resize(anchor.id, pane.bounds)
     }
 
     private fun resize(taskId: Int, bounds: SplitBounds) {
@@ -147,6 +149,7 @@ internal data class SplitBounds(
 internal data class SplitTask(
     val id: Int,
     val packageName: String,
+    val activityName: String?,
     val bounds: SplitBounds,
     val visible: Boolean,
     val rootId: Int,
@@ -159,6 +162,7 @@ internal data class SplitRootTask(
     val id: Int,
     val bounds: SplitBounds,
     val displayId: Int,
+    val activityType: String?,
     val tasks: List<SplitTask>,
 ) {
     val visible: Boolean get() = tasks.any(SplitTask::visible)
@@ -168,9 +172,22 @@ internal data class SplitRootTask(
 }
 
 internal data class SplitTaskSnapshot(val roots: List<SplitRootTask>) {
-    fun pane(anchorPackage: String): SplitRootTask? = roots.firstOrNull { root ->
-        root.displayId == 0 && root.tasks.any { it.packageName == anchorPackage }
+    fun stockPanes(): StockSplitPanes? {
+        val picker = pane(PICKER_ANCHOR_COMPONENTS) ?: return null
+        val free = pane(FREE_PANE_ANCHOR_COMPONENTS) ?: return null
+        if (picker.id == free.id) return null
+        return StockSplitPanes(picker, free)
     }
+
+    private fun pane(anchorComponents: Set<String>): SplitRootTask? = roots
+        .filter { root ->
+            root.displayId == 0 &&
+                root.activityType != HOME_ACTIVITY_TYPE &&
+                root.tasks.any { task ->
+                    "${task.packageName}/${task.activityName}" in anchorComponents
+                }
+        }
+        .singleOrNull()
 
     fun foregroundTaskOutside(
         paneIds: Set<Int>,
@@ -185,22 +202,24 @@ internal data class SplitTaskSnapshot(val roots: List<SplitRootTask>) {
             "^RootTask id=(\\d+) bounds=\\[(-?\\d+),(-?\\d+)]\\[(-?\\d+),(-?\\d+)] displayId=(\\d+)",
         )
         private val taskPattern = Regex(
-            "^\\s+taskId=(\\d+):\\s+([^\\s/]+)(?:/[^\\s]+)?\\s+bounds=\\[(-?\\d+),(-?\\d+)]" +
+            "^\\s+taskId=(\\d+):\\s+([^\\s/]+)(?:/([^\\s]+))?\\s+bounds=\\[(-?\\d+),(-?\\d+)]" +
                 "\\[(-?\\d+),(-?\\d+)]\\s+userId=\\d+\\s+visible=(true|false)" +
-                "(?:\\s+topActivity=ComponentInfo\\{([^/}\\s]+)/[^}]+\\})?",
+                "(?:\\s+topActivity=ComponentInfo\\{([^/}\\s]+)/([^}\\s]+)\\})?",
         )
+        private val activityTypePattern = Regex("mActivityType=([^\\s}]+)")
 
         fun parse(text: String): SplitTaskSnapshot {
             val roots = mutableListOf<SplitRootTask>()
             var rootId: Int? = null
             var rootBounds: SplitBounds? = null
             var displayId = -1
+            var activityType: String? = null
             var tasks = mutableListOf<SplitTask>()
 
             fun finishRoot() {
                 val id = rootId ?: return
                 val bounds = rootBounds ?: return
-                roots += SplitRootTask(id, bounds, displayId, tasks.toList())
+                roots += SplitRootTask(id, bounds, displayId, activityType, tasks.toList())
             }
 
             for (line in text.lineSequence()) {
@@ -210,23 +229,34 @@ internal data class SplitTaskSnapshot(val roots: List<SplitRootTask>) {
                     rootId = rootMatch.groupValues[1].toInt()
                     rootBounds = rootMatch.bounds(2)
                     displayId = rootMatch.groupValues[6].toInt()
+                    activityType = null
                     tasks = mutableListOf()
                     continue
                 }
                 val id = rootId ?: continue
+                activityTypePattern.find(line)?.let { match ->
+                    activityType = match.groupValues[1]
+                }
                 val taskMatch = taskPattern.find(line) ?: continue
+                val packageName = taskMatch.groupValues[2]
                 tasks += SplitTask(
                     id = taskMatch.groupValues[1].toInt(),
-                    packageName = taskMatch.groupValues[2],
-                    bounds = taskMatch.bounds(3),
-                    visible = taskMatch.groupValues[7].toBoolean(),
+                    packageName = packageName,
+                    activityName = taskMatch.groupValues[3]
+                        .ifBlank { null }
+                        ?.let { canonicalActivityName(packageName, it) },
+                    bounds = taskMatch.bounds(4),
+                    visible = taskMatch.groupValues[8].toBoolean(),
                     rootId = id,
-                    topPackageName = taskMatch.groupValues[8].ifBlank { null },
+                    topPackageName = taskMatch.groupValues[9].ifBlank { null },
                 )
             }
             finishRoot()
             return SplitTaskSnapshot(roots)
         }
+
+        private fun canonicalActivityName(packageName: String, activityName: String): String =
+            if (activityName.startsWith(".")) packageName + activityName else activityName
 
         private fun MatchResult.bounds(start: Int) = SplitBounds(
             left = groupValues[start].toInt(),
@@ -234,5 +264,19 @@ internal data class SplitTaskSnapshot(val roots: List<SplitRootTask>) {
             right = groupValues[start + 2].toInt(),
             bottom = groupValues[start + 3].toInt(),
         )
+
+        private const val HOME_ACTIVITY_TYPE = "home"
+        private val PICKER_ANCHOR_COMPONENTS = setOf(
+            "com.android.launcher3/com.android.launcher3.Launcher",
+        )
+        private val FREE_PANE_ANCHOR_COMPONENTS = setOf(
+            "com.byd.launchermap/com.byd.automap.activity.EmptyJumpActivity",
+            "com.byd.launchermap/com.byd.automap.activity.MainActivity",
+        )
     }
 }
+
+internal data class StockSplitPanes(
+    val picker: SplitRootTask,
+    val free: SplitRootTask,
+)

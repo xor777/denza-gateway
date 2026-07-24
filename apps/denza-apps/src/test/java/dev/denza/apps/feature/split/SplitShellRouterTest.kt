@@ -175,6 +175,30 @@ class SplitShellRouterTest {
         )
     }
 
+    @Test
+    fun disableIgnoresFullscreenHomeRootAndLeavesExpandedStockAnchorsInPlace() {
+        val commands = mutableListOf<String>()
+        val router = SplitShellRouter { command ->
+            commands += command
+            if (command == "am stack list") expandedSplitWithFullscreenHomeRoot else ""
+        }
+
+        router.disable()
+
+        assertEquals(
+            listOf("am stack list"),
+            commands,
+        )
+    }
+
+    @Test
+    fun identifiesStockSplitByComponentWhenHomeRootAppearsFirst() {
+        val panes = SplitTaskSnapshot.parse(expandedSplitWithFullscreenHomeRoot).stockPanes()
+
+        assertEquals(3, panes?.picker?.id)
+        assertEquals(2, panes?.free?.id)
+    }
+
     private companion object {
         val fullscreenDenzaApps = """
             RootTask id=4 bounds=[0,0][2560,1600] displayId=0 userId=0
@@ -258,6 +282,24 @@ class SplitShellRouterTest {
 
             RootTask id=4 bounds=[0,0][2560,1600] displayId=0 userId=0
               taskId=58: dev.denza.apps/dev.denza.apps.MainActivity bounds=[0,0][2560,1600] userId=0 visible=false topActivity=ComponentInfo{dev.denza.apps/dev.denza.apps.MainActivity}
+        """.trimIndent()
+
+        val expandedSplitWithFullscreenHomeRoot = """
+            RootTask id=1 bounds=[0,0][2560,1600] displayId=0 userId=0
+             configuration={winConfig={mActivityType=home}}
+              taskId=110: com.android.launcher3/com.android.launcher3.home.MainActivity bounds=[0,0][2560,1600] userId=0 visible=false topActivity=ComponentInfo{com.android.launcher3/com.android.launcher3.home.MainActivity}
+
+            RootTask id=3 bounds=[0,0][2560,1600] displayId=0 userId=0
+             configuration={winConfig={mActivityType=standard}}
+              taskId=122: com.android.launcher3/com.android.launcher3.Launcher bounds=[0,0][2560,1600] userId=0 visible=true topActivity=ComponentInfo{com.android.launcher3/com.android.launcher3.Launcher}
+
+            RootTask id=2 bounds=[1704,112][2536,1472] displayId=0 userId=0
+             configuration={winConfig={mActivityType=standard}}
+              taskId=115: com.byd.launchermap/com.byd.automap.activity.EmptyJumpActivity bounds=[1704,112][2536,1472] userId=0 visible=false topActivity=ComponentInfo{com.byd.launchermap/com.byd.automap.activity.MainActivity}
+
+            RootTask id=4 bounds=[0,0][2560,1600] displayId=0 userId=0
+             configuration={winConfig={mActivityType=standard}}
+              taskId=146: dev.denza.apps/dev.denza.apps.MainActivity bounds=[0,0][2560,1600] userId=0 visible=false topActivity=ComponentInfo{dev.denza.apps/dev.denza.apps.MainActivity}
         """.trimIndent()
     }
 }
