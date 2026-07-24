@@ -75,6 +75,7 @@ import dev.denza.apps.NavigationAppChoice
 import dev.denza.apps.SimulcastAppChoice
 import dev.denza.apps.core.FeatureSnapshot
 import dev.denza.apps.core.FeatureStatus
+import dev.denza.apps.feature.cluster.ClusterDisplayDescriptor
 import dev.denza.apps.feature.cluster.ClusterMapPlacement
 import dev.denza.apps.feature.fse.FseInstallApp
 import dev.denza.apps.feature.mirrors.MirrorsPosition
@@ -124,8 +125,19 @@ fun DenzaAppsRoot(
     val uiState by state.collectAsState()
     var showSupport by remember { mutableStateOf(false) }
     var showTechnical by remember { mutableStateOf(false) }
+    var showClusterPicker by remember { mutableStateOf(false) }
     var titleTaps by remember { mutableIntStateOf(0) }
     val selectedNavigationApp = uiState.navigationAppChoices.firstOrNull { it.selected }
+    val navigationActions = FeatureActionPolicy.navigation(
+        uiState.navigation,
+        uiState.navigationButtonLabel,
+    )
+    val simulcastActions = FeatureActionPolicy.simulcast(uiState.simulcast)
+    val mirrorAction = FeatureActionPolicy.mirrors(uiState.mirrors)
+    val openClusterPicker = {
+        onRefreshScreenDiagnostics()
+        showClusterPicker = true
+    }
 
     DenzaTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = Background) {
@@ -194,26 +206,30 @@ fun DenzaAppsRoot(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                OutlinedButton(
+                                FeatureChooserButton(
                                     modifier = Modifier.weight(1f),
                                     onClick = onChooseNavigationApp,
+                                    emphasized = navigationActions.chooserEmphasized,
                                     enabled = uiState.navigation.status != FeatureStatus.STARTING &&
                                         uiState.navigation.status != FeatureStatus.RECOVERING &&
                                         uiState.navigation.status != FeatureStatus.ACTIVE,
-                                ) {
-                                    Text("Выбрать", fontWeight = FontWeight.SemiBold)
-                                }
+                                    text = "Выбрать",
+                                )
                                 Button(
                                     modifier = Modifier.weight(1f),
-                                    onClick = onNavigationAction,
-                                    enabled = uiState.navigation.status != FeatureStatus.STARTING &&
+                                    onClick = when (navigationActions.primaryTarget) {
+                                        FeatureActionTarget.SELECT_CLUSTER_DISPLAY -> openClusterPicker
+                                        else -> onNavigationAction
+                                    },
+                                    enabled = navigationActions.primaryEnabled &&
+                                        uiState.navigation.status != FeatureStatus.STARTING &&
                                         uiState.navigation.status != FeatureStatus.RECOVERING,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = Accent,
                                         contentColor = Color(0xFF06251C),
                                     ),
                                 ) {
-                                    Text(uiState.navigationButtonLabel, fontWeight = FontWeight.SemiBold)
+                                    Text(navigationActions.primaryLabel, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -235,17 +251,19 @@ fun DenzaAppsRoot(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                OutlinedButton(
+                                FeatureChooserButton(
                                     modifier = Modifier.weight(1f),
                                     onClick = onChooseApps,
-                                ) {
-                                    Text("Выбрать", fontWeight = FontWeight.SemiBold)
-                                }
+                                    emphasized = simulcastActions.chooserEmphasized,
+                                    text = "Выбрать",
+                                )
                                 Button(
                                     modifier = Modifier.weight(1f),
-                                    onClick = if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
-                                        uiState.simulcast.desiredEnabled
-                                    ) onRepairSimulcast else onLaunchSimulcast,
+                                    onClick = when (simulcastActions.primaryTarget) {
+                                        FeatureActionTarget.RETRY -> onRepairSimulcast
+                                        else -> onLaunchSimulcast
+                                    },
+                                    enabled = simulcastActions.primaryEnabled,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = if (uiState.simulcast.desiredEnabled) {
                                             Accent
@@ -260,9 +278,7 @@ fun DenzaAppsRoot(
                                     ),
                                 ) {
                                     Text(
-                                        if (uiState.simulcast.status == FeatureStatus.NEEDS_ACTION &&
-                                            uiState.simulcast.desiredEnabled
-                                        ) "Исправить" else "Запустить",
+                                        simulcastActions.primaryLabel,
                                         fontWeight = FontWeight.SemiBold,
                                     )
                                 }
@@ -341,9 +357,13 @@ fun DenzaAppsRoot(
                             ) {
                                 OutlinedButton(
                                     modifier = Modifier.fillMaxWidth(),
-                                    onClick = onPreviewMirrors,
+                                    onClick = when (mirrorAction.target) {
+                                        FeatureActionTarget.SELECT_CLUSTER_DISPLAY -> openClusterPicker
+                                        else -> onPreviewMirrors
+                                    },
+                                    enabled = mirrorAction.enabled,
                                 ) {
-                                    Text("Проверить камеры", fontWeight = FontWeight.SemiBold)
+                                    Text(mirrorAction.label, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -366,6 +386,7 @@ fun DenzaAppsRoot(
                             subtitle = "Указания на проекции",
                             snapshot = uiState.hudGuidance,
                             onToggle = onToggleHudGuidance,
+                            onRetry = { onToggleHudGuidance(true) },
                         )
                         CompactActionCard(
                             modifier = Modifier.weight(1f),
@@ -408,6 +429,17 @@ fun DenzaAppsRoot(
                 showSupport = false
                 showTechnical = false
             },
+        )
+    }
+    if (showClusterPicker) {
+        ClusterDisplayPickerDialog(
+            displays = uiState.clusterCandidates,
+            onSelect = { displayId ->
+                onSelectClusterDisplay(displayId)
+                showClusterPicker = false
+            },
+            onRefresh = onRefreshScreenDiagnostics,
+            onDismiss = { showClusterPicker = false },
         )
     }
     if (uiState.appPickerVisible) {
@@ -461,8 +493,23 @@ private fun CompactToggleCard(
     subtitle: String,
     snapshot: FeatureSnapshot,
     onToggle: (Boolean) -> Unit,
+    onRetry: (() -> Unit)? = null,
 ) {
     val enabled = snapshot.desiredEnabled
+    val attentionSubtitle = when (snapshot.status) {
+        FeatureStatus.NEEDS_ACTION,
+        FeatureStatus.UNAVAILABLE,
+        FeatureStatus.ERROR,
+        -> snapshot.message.ifBlank { subtitle }
+        else -> subtitle
+    }
+    val subtitleColor = when (snapshot.status) {
+        FeatureStatus.NEEDS_ACTION -> Warning
+        FeatureStatus.ERROR -> Danger
+        FeatureStatus.UNAVAILABLE -> Muted
+        else -> if (enabled) Muted else DisabledMuted
+    }
+    val retryLabel = FeatureActionPolicy.compactRetryLabel(snapshot)
     Card(
         modifier = modifier.height(96.dp),
         shape = RoundedCornerShape(22.dp),
@@ -490,7 +537,7 @@ private fun CompactToggleCard(
                 )
             }
             Spacer(Modifier.width(16.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     title,
                     color = if (enabled) Ink else DisabledInk,
@@ -498,12 +545,13 @@ private fun CompactToggleCard(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    subtitle,
-                    color = if (enabled) Muted else DisabledMuted,
+                    attentionSubtitle,
+                    color = subtitleColor,
                     fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.weight(1f))
             if (snapshot.status == FeatureStatus.STARTING || snapshot.status == FeatureStatus.RECOVERING) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(16.dp),
@@ -512,12 +560,49 @@ private fun CompactToggleCard(
                 )
                 Spacer(Modifier.width(8.dp))
             }
+            if (retryLabel != null && onRetry != null) {
+                TextButton(onClick = onRetry) {
+                    Text(retryLabel, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.width(4.dp))
+            }
             Switch(
                 checked = enabled,
                 onCheckedChange = onToggle,
                 enabled = snapshot.status != FeatureStatus.STARTING &&
                     snapshot.status != FeatureStatus.RECOVERING,
             )
+        }
+    }
+}
+
+@Composable
+private fun FeatureChooserButton(
+    modifier: Modifier,
+    text: String,
+    emphasized: Boolean,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    if (emphasized) {
+        Button(
+            modifier = modifier,
+            enabled = enabled,
+            onClick = onClick,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Accent,
+                contentColor = Color(0xFF06251C),
+            ),
+        ) {
+            Text(text, fontWeight = FontWeight.SemiBold)
+        }
+    } else {
+        OutlinedButton(
+            modifier = modifier,
+            enabled = enabled,
+            onClick = onClick,
+        ) {
+            Text(text, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1034,31 +1119,40 @@ private fun FeatureCard(
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (subtitleIcon != null) {
-                    CompactAppIcon(
-                        icon = subtitleIcon,
-                        key = subtitleIconKey.orEmpty(),
-                        fallback = icon,
+            val showAttentionInstruction =
+                snapshot.status == FeatureStatus.NEEDS_ACTION && snapshot.message.isNotBlank()
+            if (showAttentionInstruction) {
+                AttentionInstruction(snapshot.message)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (subtitleIcon != null) {
+                        CompactAppIcon(
+                            icon = subtitleIcon,
+                            key = subtitleIconKey.orEmpty(),
+                            fallback = icon,
+                        )
+                        Spacer(Modifier.width(7.dp))
+                    }
+                    Text(
+                        subtitle,
+                        color = if (featureEnabled) Muted else DisabledMuted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(Modifier.width(7.dp))
+                    Spacer(Modifier.width(10.dp))
+                    StatusLine(snapshot)
                 }
-                Text(
-                    subtitle,
-                    color = if (featureEnabled) Muted else DisabledMuted,
-                    fontSize = 13.sp,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.width(10.dp))
-                StatusLine(snapshot)
             }
-            if (snapshot.message.isNotBlank()) {
+            if (!showAttentionInstruction && snapshot.message.isNotBlank()) {
                 Spacer(Modifier.height(5.dp))
                 Text(
                     snapshot.message,
-                    color = Muted,
+                    color = when (snapshot.status) {
+                        FeatureStatus.ERROR -> Danger
+                        else -> Muted
+                    },
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1072,6 +1166,26 @@ private fun FeatureCard(
                 Box(modifier = Modifier.fillMaxWidth()) { actions() }
             }
         }
+    }
+}
+
+@Composable
+private fun AttentionInstruction(message: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 32.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).background(Warning, CircleShape))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            message,
+            modifier = Modifier.weight(1f),
+            color = Warning,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1131,7 +1245,8 @@ private fun StatusLine(snapshot: FeatureSnapshot) {
     val color = when (snapshot.status) {
         FeatureStatus.READY, FeatureStatus.ACTIVE -> Accent
         FeatureStatus.STARTING, FeatureStatus.RECOVERING -> Warning
-        FeatureStatus.NEEDS_ACTION, FeatureStatus.ERROR -> Danger
+        FeatureStatus.NEEDS_ACTION -> Warning
+        FeatureStatus.ERROR -> Danger
         else -> Muted
     }
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1161,6 +1276,95 @@ private fun StatusLine(snapshot: FeatureSnapshot) {
             fontSize = 12.sp,
             maxLines = 1,
         )
+    }
+}
+
+@Composable
+private fun ClusterDisplayPickerDialog(
+    displays: List<ClusterDisplayDescriptor>,
+    onSelect: (Int?) -> Unit,
+    onRefresh: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val choices = displays.filter { it.id != 0 && !it.isOwnVirtualDisplay }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.56f),
+            color = SurfaceColor,
+            shape = RoundedCornerShape(26.dp),
+        ) {
+            Column(modifier = Modifier.padding(28.dp)) {
+                Text(
+                    "Выберите приборный экран",
+                    color = Ink,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "После выбора на экране появится короткая проверка",
+                    color = Muted,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(20.dp))
+                if (choices.isEmpty()) {
+                    Text(
+                        "Приборные экраны пока не найдены",
+                        color = Warning,
+                        fontSize = 15.sp,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = onRefresh,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Accent,
+                            contentColor = Color(0xFF06251C),
+                        ),
+                    ) {
+                        Text("Повторить поиск", fontWeight = FontWeight.SemiBold)
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 350.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        choices.forEachIndexed { index, display ->
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = { onSelect(display.id) },
+                                border = BorderStroke(1.dp, Elevated),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink),
+                            ) {
+                                Text(
+                                    "Экран ${index + 1} · ${display.width}×${display.height}",
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(onClick = { onSelect(null) }) {
+                        Text("Определять автоматически", color = Accent)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = onDismiss) {
+                        Text("Отмена", color = Muted)
+                    }
+                }
+            }
+        }
     }
 }
 
